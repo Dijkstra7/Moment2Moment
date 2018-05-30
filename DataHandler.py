@@ -4,10 +4,11 @@ from openpyxl import load_workbook
 
 class DataHandler():
     def __init__(self,
-                 fname="./LearningcurvefileAllData_onlyfirstattempts_anoniem.xlsm"):
+                 fname="C:/Users/rdijkstra/Downloads/LearningcurvefileAllData_onlyfirstattempts_anoniem29-5+KAS (1).xlsm"):
+        print("loading workbook")
         wb = load_workbook(fname)
         self.ws = wb.active
-        self.max_row = 13627  # self.get_max_row()
+        self.max_row = 16384  # self.get_max_row()
         self.dates = self.get_column(1)
         self.times = self.get_column(2)
         self.user_ids = self.get_column(3)
@@ -19,6 +20,7 @@ class DataHandler():
         self.ts = self.get_column(8)
         self.gs = self.get_column(9)
         self.ss = self.get_column(10)
+        print(len(self. l0s))
         self.m2m = MomentByMoment(self.user_ids, self.corrects, self)
         # self.pre_ids, self.c_in_ids, self.c_ex_ids, self.a_ex_ids, \
         # self.ra_ex_ids, self.post_ids = self.get_color_ids()
@@ -37,7 +39,7 @@ class DataHandler():
             if color != '00000000':
                 return i
 
-    def get_column(self, cid, start_row=2, end_row=None):
+    def get_column(self, cid, start_row=8, end_row=None):
         if end_row is None:
             end_row = self.max_row
         if end_row <= start_row:
@@ -47,6 +49,8 @@ class DataHandler():
             value = self.ws.cell(row=i, column=cid).value
             if value or value == 0:
                 column.append(value)
+            if value is None:
+                column.append(None)
         return np.array(column)
 
     def get_users(self):
@@ -60,9 +64,9 @@ class DataHandler():
         return self.m2m.get_p_T(user_id, method, oid)
 
     def get_graph_variables(self, user_id=0, method='all', oid=None):
-        # print("getting variables for user {}".format(user_id))
-        # if oid is not None:
-        #     print("and for skill id {}".format(oid))
+        print("getting variables for user {}".format(user_id))
+        if oid is not None:
+            print("and for skill id {}".format(oid))
         self.set_ps_correct(user_id, oid)
         p_j = self.m2m.get_p_j(user_id=user_id, method=method,
                                objective_id=oid)
@@ -74,10 +78,21 @@ class DataHandler():
     def set_ps_correct(self, user_id, oid):
         ids = np.where((self.user_ids == user_id) &
                        (oid == self.learn_obj_ids))
-        l = self.l0s[ids][0]
-        t = self.ts[ids][0]
-        g = self.gs[ids][0]
-        s = self.ss[ids][0]
+        loids = np.where(self.learn_obj_ids == oid)
+        sames = [0]
+        answers = [self.corrects[loids[0][0]]]
+        for l, nextl in zip(loids[0][:-1], loids[0][1:]):
+            if self.user_ids[l] == self.user_ids[nextl]:
+                sames.append(1)
+            else:
+                sames.append(0)
+            answers.append(self.corrects[nextl])
+        print(len(sames), len(answers), len(loids))
+        l, t, g, s = ParameterExtractor().smart_ssr(answers, sames, 1000, 4)
+        # l = self.l0s[ids][0]
+        # t = self.ts[ids][0]
+        # g = self.gs[ids][0]
+        # s = self.ss[ids][0]
         self.m2m.set_ps(l, t, g, s)
 
     def get_color_ids(self, fname='res/ID exercises.xlsx'):
@@ -347,6 +362,9 @@ class ParameterExtractor:
         G = max(1E-15, G)
         L0 = max(1E-15, L0)
         L = L0
+        if sames is None:
+            sames = np.ones(answers.size)
+            sames[0] = 1
         for same, answer in zip(sames, answers):
             if same == 0:
                 L = L0
@@ -370,33 +388,35 @@ class ParameterExtractor:
                                endpoint=False)[1:]
         return [possible_range]
 
+    def smart_ssr(self, answers, same, grain, iterations):
+        best_l0 = self.brute_force_params(answers, same, grain, None, 0.0, 0.0, 0.0)[
+            0]
+        best_t = self.brute_force_params(answers, same, grain, 0.0, None, 0.0, 0.0)[
+            1]
+        best_g = self.brute_force_params(answers, same, grain, 0.0, 0.0, None, 0.0)[
+            2]
+        best_s = self.brute_force_params(answers, same, grain, 0.0, 0.0, 0.0, None)[
+            3]
+        for i in range(iterations):
+            print("best is {}".format([best_l0, best_t, best_g, best_s]))
+            best_l0 = \
+                self.brute_force_params(answers, same, grain, None, best_t, best_g,
+                                      best_s)[0]
+            best_t = \
+                self.brute_force_params(answers, same, grain, best_l0, None, best_g,
+                                      best_s)[1]
+            best_g = \
+                self.brute_force_params(answers, same, grain, best_l0, best_t, None,
+                                      best_s)[2]
+            best_s = self.brute_force_params(answers, same, grain, best_l0, best_t,
+                                           best_g, None)[3]
+        return best_l0, best_t, best_g, best_s
+
 
 ex = ParameterExtractor()
 
 
-def smart_ssr(answers, same, grain, iterations):
-    best_l0 = ex.brute_force_params(answers, same, grain, None, 0.0, 0.0, 0.0)[
-        0]
-    best_t = ex.brute_force_params(answers, same, grain, 0.0, None, 0.0, 0.0)[
-        1]
-    best_g = ex.brute_force_params(answers, same, grain, 0.0, 0.0, None, 0.0)[
-        2]
-    best_s = ex.brute_force_params(answers, same, grain, 0.0, 0.0, 0.0, None)[
-        3]
-    for i in range(iterations):
-        print("best is {}".format([best_l0, best_t, best_g, best_s]))
-        best_l0 = \
-            ex.brute_force_params(answers, same, grain, None, best_t, best_g,
-                                  best_s)[0]
-        best_t = \
-            ex.brute_force_params(answers, same, grain, best_l0, None, best_g,
-                                  best_s)[1]
-        best_g = \
-            ex.brute_force_params(answers, same, grain, best_l0, best_t, None,
-                                  best_s)[2]
-        best_s = ex.brute_force_params(answers, same, grain, best_l0, best_t,
-                                       best_g, None)[3]
-    return best_l0, best_t, best_g, best_s
+
 
 
 if __name__ == "__main__":  # TESTING
@@ -602,6 +622,6 @@ if __name__ == "__main__":  # TESTING
     # ex.params_max = [1.0 for i in range(4)]
     # print(ex.brute_force_params(answers, same))
 
-    print(ex.get_s_s_r(*smart_ssr(answers, same, 1000, 4), answers, same))
+    print(ex.get_s_s_r(*ex.smart_ssr(answers, same, 1000, 4), answers, same))
     print(ex.get_s_s_r(0.955, 0.3, 0.299, 0.068, answers, same))
     print(ex.get_s_s_r(1.0, 0.001, 0.001, 0.07171717, answers, same))
