@@ -4,7 +4,7 @@ from openpyxl import load_workbook
 
 class DataHandler():
     def __init__(self,
-                 fname="C:/Users/rdijkstra/Downloads/LearningcurvefileAllData_onlyfirstattempts_anoniem29-5+KAS (1).xlsm"):
+                 fname="C:/Users/rick dijkstra/Downloads/LearningcurvefileAllData_onlyfirstattempts_anoniem29-5+KAS (3).xlsm"):
         print("loading workbook")
         wb = load_workbook(fname)
         self.ws = wb.active
@@ -12,14 +12,14 @@ class DataHandler():
         self.dates = self.get_column(1)
         self.times = self.get_column(2)
         self.user_ids = self.get_column(3)
-        self.exercise_ids = self.get_column(5)
         self.learn_obj_ids = self.get_column(4)
+        self.exercise_ids = self.get_column(5)
         self.corrects = self.get_column(6)
         # self.ability_scores = self.get_column(7)
-        self.l0s = self.get_column(7)
-        self.ts = self.get_column(8)
-        self.gs = self.get_column(9)
-        self.ss = self.get_column(10)
+        self.l0s = [0.001, 0.027, 0.536, .666]  # From bruteforceparameters
+        self.ts = [	0.149, 0.059, 0.101, .007]
+        self.gs = [0.299, 0.250, 0.232, .299]
+        self.ss = [0.100, 0.100, 0.100, .1]
         print(len(self. l0s))
         self.m2m = MomentByMoment(self.user_ids, self.corrects, self)
         # self.pre_ids, self.c_in_ids, self.c_ex_ids, self.a_ex_ids, \
@@ -76,23 +76,24 @@ class DataHandler():
                                 objective_id=oid)
 
     def set_ps_correct(self, user_id, oid):
-        ids = np.where((self.user_ids == user_id) &
-                       (oid == self.learn_obj_ids))
-        loids = np.where(self.learn_obj_ids == oid)
-        sames = [0]
-        answers = [self.corrects[loids[0][0]]]
-        for l, nextl in zip(loids[0][:-1], loids[0][1:]):
-            if self.user_ids[l] == self.user_ids[nextl]:
-                sames.append(1)
-            else:
-                sames.append(0)
-            answers.append(self.corrects[nextl])
-        print(len(sames), len(answers), len(loids))
-        l, t, g, s = ParameterExtractor().smart_ssr(answers, sames, 1000, 4)
-        # l = self.l0s[ids][0]
-        # t = self.ts[ids][0]
-        # g = self.gs[ids][0]
-        # s = self.ss[ids][0]
+        #     ids = np.where((self.user_ids == user_id) &
+        #                    (oid == self.learn_obj_ids))
+        #     loids = np.where(self.learn_obj_ids == oid)
+        #     sames = [0]
+        #     answers = [self.corrects[loids[0][0]]]
+        #     for l, nextl in zip(loids[0][:-1], loids[0][1:]):
+        #         if self.user_ids[l] == self.user_ids[nextl]:
+        #             sames.append(1)
+        #         else:
+        #             sames.append(0)
+        #         answers.append(self.corrects[nextl])
+        #     print(len(sames), len(answers), len(loids))
+        #  l, t, g, s = ParameterExtractor().smart_ssr(answers, sames, 1000, 4)
+        loids = ['a7771', 'a7789', 'a8025', 'a7579']
+        l = self.l0s[loids.index(oid)]
+        t = self.ts[loids.index(oid)]
+        g = self.gs[loids.index(oid)]
+        s = self.ss[loids.index(oid)]
         self.m2m.set_ps(l, t, g, s)
 
     def get_color_ids(self, fname='res/ID exercises.xlsx'):
