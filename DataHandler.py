@@ -1,31 +1,83 @@
 import numpy as np
 from openpyxl import load_workbook
+import pickle
 
 
-class DataHandler():
+class DataHandler:
+    """
+    Extract data from an excel file containing student activities.
+
+    This class opens a file containing the data from multiple students on how
+    they performed on the Snappet app. It extracts the user ID's, learning
+    objective ID's, exercise ID's, date and time and correctness of a
+    students answer on an exercise. It tracks what kind of exercise each
+    particular exercise is.
+
+    Additionally an instance of the moment by moment calculator class is
+    created.
+    """
     def __init__(self,
                  fname="C:/Users/rick dijkstra/Downloads/LearningcurvefileAllData_onlyfirstattempts_anoniem29-5+KAS (3).xlsm"):
+        # Load the workbook.
         print("loading workbook")
-        wb = load_workbook(fname)
-        self.ws = wb.active
-        self.max_row = 16384  # self.get_max_row()
-        self.dates = self.get_column(1)
-        self.times = self.get_column(2)
-        self.user_ids = self.get_column(3)
-        self.learn_obj_ids = self.get_column(4)
-        self.exercise_ids = self.get_column(5)
-        self.corrects = self.get_column(6)
-        # self.ability_scores = self.get_column(7)
+        self.load_student_workbook(fname)
+
+        # Set pre calculated brute force parameters
         self.l0s = [0.001, 0.027, 0.536, .666]  # From bruteforceparameters
         self.ts = [	0.149, 0.059, 0.101, .007]
         self.gs = [0.299, 0.250, 0.232, .299]
         self.ss = [0.100, 0.100, 0.100, .1]
-        print(len(self. l0s))
+        self.fs = [0.05, 0.05, 0.05, 0.05]
+
+        # Retrieve the color belonging to the exercise IDS.
+        self.pre_ids, self.c_in_ids, self.c_ex_ids, self.a_ex_ids, \
+            self.ra_ex_ids, self.post_ids = self.get_color_ids()
+
+        # Initialize moment by moment class instance.
         self.m2m = MomentByMoment(self.user_ids, self.corrects, self)
-        # self.pre_ids, self.c_in_ids, self.c_ex_ids, self.a_ex_ids, \
-        # self.ra_ex_ids, self.post_ids = self.get_color_ids()
+
+    def load_student_workbook(self, fname):
+        """
+        Loads the workbook with the student actions, if possible from pickle.
+
+        :param fname: the path to the excel file.
+        """
+        excel_file = fname
+        while fname[-1] != '.':
+            fname = fname[:-1]
+        fname = fname.split('/')[-1]+"pkl"
+        self.max_row = 16384  # self.get_max_row()
+        try:
+            print("Trying to open {}".format(fname))
+            self.dates, self.times, self.user_ids, self.learn_obj_ids, \
+            self.exercise_ids, self.corrects, self.ability_scores \
+                = pickle.load(open(fname, "rb"))
+        except FileNotFoundError:
+            print("Failed opening {}\nInstead opening {}".format(fname,
+                                                                 excel_file))
+            wb = load_workbook(excel_file)
+            self.ws = wb.active
+            self.dates = self.get_column(1)
+            self.times = self.get_column(2)
+            self.user_ids = self.get_column(3)
+            self.learn_obj_ids = self.get_column(4)
+            self.exercise_ids = self.get_column(5)
+            self.corrects = self.get_column(6)
+            self.ability_scores = self.get_column(7)
+            pickle.dump([self.dates, self.times, self.user_ids,
+                         self.learn_obj_ids, self.exercise_ids,
+                         self.corrects, self.ability_scores], open(fname,
+                                                                   "wb"))
 
     def get_max_row(self, column=1):
+        """
+        Gets the maximum row value in the excel file.
+
+        Needed to bound the get_column function
+        :param column: integer representing for what column we find the last
+            row.
+        :return: integer representing the last column with a value.
+        """
         val = self.ws.cell(row=1, column=column).value
         i = 1
         while val:
@@ -34,19 +86,45 @@ class DataHandler():
         return i
 
     def get_color_row(self, column=1):
+        """
+        Get's the index of the row where the color is located.
+
+        Needed to split the indices for the exercises in different colors.
+
+        :param column: The column in which we want to find the change.
+        :return: integer representing the row index where the color changes.
+        """
         for i in range(1, 20):
+            # Find the color of the cell.
             color = self.ws.cell(row=i, column=column).fill.start_color.index
             if color != '00000000':
                 return i
 
     def get_column(self, cid, start_row=8, end_row=None):
+        """
+        Get the values of a certain column.
+
+        :param cid: integer; the ID of the column from which we
+            get the variables
+        :param start_row: integer; the ID of which row we start.
+        :param end_row: integer; the ID of what the last row is that we
+            include. defaults to self.max_row
+        :return: numpy array with the values in the specified column.
+        """
+        # Set default value
         if end_row is None:
             end_row = self.max_row
+
+        # Check whether parameters are valid, else return empty array
         if end_row <= start_row:
-            end_row = start_row + 1
+            return np.array([])
+
+        # Retrieve the values in the column
         column = []
         for i in range(start_row, end_row):
+            # Get value from cell.
             value = self.ws.cell(row=i, column=cid).value
+            # Make sure the value is implemented correctly.
             if value or value == 0:
                 column.append(value)
             if value is None:
@@ -54,49 +132,92 @@ class DataHandler():
         return np.array(column)
 
     def get_users(self):
+        """
+        Get the unique ID's of all users.
+        :return: numpy array containing all users once.
+        """
         return np.unique(self.user_ids)
 
-    def get_corrects_from_user(self, user_id=0, method='all'):
-        if method == 'all':
-            return self.corrects[np.where(self.user_ids == user_id)]
-
-    def get_dummy_graph_variables(self, user_id=0, method='all', oid=None):
-        return self.m2m.get_p_T(user_id, method, oid)
+    # TODO: check whether still used. if so implement more methods.
+    # def get_corrects_from_user(self, user_id=0, method='all'):
+    #     """
+    #     Get the answers from a user in the column correct.
+    #
+    #     :param user_id: string representing the user.
+    #     :param method: what type of answers should be given.
+    #     :return: the answers given by a user according to a certain method.
+    #     """
+    #     if method == 'all':
+    #         return self.corrects[np.where(self.user_ids == user_id)]
 
     def get_graph_variables(self, user_id=0, method='all', oid=None):
+        """
+        Generates the variables that will be shown in the graph.
+
+        Create the boundaries and colors for the list representing the phase of
+        the lesson. get the P(J) values per answer of a student and return that
+        as a list.
+        Method handles what happens when a student tries multiple answers
+        per exercise. The options are:
+        - all: use all answers
+        - first: Use only the first answer on any exercise
+        - second: Use only the second answer on any exercise
+        - all but first: Use all but the first answer on any exercise.
+        - last: use the last answer on any exercise.
+        :param user_id: String representing the student.
+        :param method: String representing the method of selection of answers.
+        :param oid:
+        :return:
+        """
         print("getting variables for user {}".format(user_id))
         if oid is not None:
             print("and for skill id {}".format(oid))
-        self.set_ps_correct(user_id, oid)
+        self.set_ps_correct(oid)
         p_j = self.m2m.get_p_j(user_id=user_id, method=method,
                                objective_id=oid)
         self.graph_length = len(p_j)
-        # self.boundary_list, self.color_list = self.m2m.get_color_bars()
+        self.boundary_list, self.color_list = self.m2m.get_color_bars()
         return self.m2m.get_p_j(user_id=user_id, method=method,
                                 objective_id=oid)
 
-    def set_ps_correct(self, user_id, oid):
-        #     ids = np.where((self.user_ids == user_id) &
-        #                    (oid == self.learn_obj_ids))
-        #     loids = np.where(self.learn_obj_ids == oid)
-        #     sames = [0]
-        #     answers = [self.corrects[loids[0][0]]]
-        #     for l, nextl in zip(loids[0][:-1], loids[0][1:]):
-        #         if self.user_ids[l] == self.user_ids[nextl]:
-        #             sames.append(1)
-        #         else:
-        #             sames.append(0)
-        #         answers.append(self.corrects[nextl])
-        #     print(len(sames), len(answers), len(loids))
-        #  l, t, g, s = ParameterExtractor().smart_ssr(answers, sames, 1000, 4)
-        loids = ['a7771', 'a7789', 'a8025', 'a7579']
-        l = self.l0s[loids.index(oid)]
-        t = self.ts[loids.index(oid)]
-        g = self.gs[loids.index(oid)]
-        s = self.ss[loids.index(oid)]
-        self.m2m.set_ps(l, t, g, s)
+    def set_ps_correct_calc(self, oid):
+         """ Old method to generate the pre calculated parameters. """
+         loids = np.where(self.learn_obj_ids == oid)
+         sames = [0]
+         answers = [self.corrects[loids[0][0]]]
+         for l, nextl in zip(loids[0][:-1], loids[0][1:]):
+             if self.user_ids[l] == self.user_ids[nextl]:
+                 sames.append(1)
+             else:
+                 sames.append(0)
+             answers.append(self.corrects[nextl])
+         print(len(sames), len(answers), len(loids))
+         l, t, g, s, f = ParameterExtractor().smart_ssr(answers, sames,
+                                                        1000, 10)
+         self.m2m.set_ps(l, t, g, s, f)
+
+    def set_ps_correct(self, oid):
+        """
+        Set the corresponding precalculated parameters for the learning goal.
+        :param oid: string representing which learning goal is used.
+        """
+        loids = ['a7771', 'a7789', 'a8025', 'a7579']  # hardcoded for this file
+        position = loids.index(oid)
+
+        l = self.l0s[position]
+        t = self.ts[position]
+        g = self.gs[position]
+        s = self.ss[position]
+        f = self.fs[position]
+        self.m2m.set_ps(l, t, g, s, f)
 
     def get_color_ids(self, fname='res/ID exercises.xlsx'):
+        """
+        Set what exercises belong to what phase in the lesson.
+        :param fname: Path to the file containing information about the
+            exercises.
+        :return: per lesson phase a list of the corresponding ID's
+        """
         wb = load_workbook(fname)
         self.ws = wb.active
         pre = list(self.get_column(1, 3))
@@ -107,8 +228,8 @@ class DataHandler():
         cex = list(self.get_column(2, c_bound[0])) + \
               list(self.get_column(3, c_bound[0])) + \
               list(self.get_column(4, c_bound[0]))
-        aex = None
-        raex = None
+        aex = []
+        raex = []
         post = list(self.get_column(5, 3))
         return (pre, cin, cex, aex, raex, post)
 
@@ -119,32 +240,52 @@ class MomentByMoment:
         self.p_T = 0.095
         self.p_G = 0.299
         self.p_S = 0.1
+        self.p_F = .08
         self.p_ln = []
         self.user_ids = user_ids
         self.users = np.unique(user_ids)
         self.answers = corrects
         self.handler = handler
-        self.list_p_T = []
 
-    def set_ps(self, l, t, g, s):
+    def set_ps(self, l, t, g, s, f):
+        """ Setter for the precalculated parameters. """
         self.p_l0 = l
         self.p_T = t
         self.p_G = g
         self.p_S = s
-
-    def get_p_T(self, user_id, method='all', objective_id=None):
-        return self.list_p_T[:]
+        self.p_F = f
 
     def get_p_j(self, user_id, method='all', objective_id=None):
+        """ Get and calculate the P(J).
+
+        First calculate P(L) and P(T) than with that calculate P(J) and
+        return it.
+
+        :param user_id: string; the id of the user for which we want P(J).
+        :param method: string; How we handle multiple answers for one exercise.
+        :param objective_id: string: For which objective_id we want answers.
+        :returns: list of P(J) per answer.
+        """
+        # get the correct answers based on methods.
         user_answers = self.filter_answers(user_id, method, objective_id)
+
+        #calculate P(L_n) based on the answers.
         p_ln = self.calculate_ln(user_answers)
+
+        # Calculate P(~l_n^T) and P(~L_n~T)
         p_not_ln_t = [(1 - ln) * self.p_T for ln in p_ln]
         p_not_ln_not_t = [(1 - ln) * (1 - self.p_T) for ln in p_ln]
-        self.list_p_T = p_ln[:-2]
         return self.calculate_p_j(user_answers, p_ln, p_not_ln_t,
                                   p_not_ln_not_t)
 
     def filter_answers(self, user_id, method, objectives_id):
+        """ Filter the answers on user, objective and method.
+
+        :param user_id: string; the user ID.
+        :param method: string; How we handle multiple answers on an exercise.
+        :param objectives_id: string; The ID for the objectives.
+        :return: list of answers to calculate P(J) for.
+        """
         user_answers = self.answers[:]
         user_objectives = self.handler.learn_obj_ids[:]
         user_ids = self.user_ids[:]
@@ -259,9 +400,11 @@ class MomentByMoment:
         return p_j
 
     def get_color_bars(self):
+        # TODO: Update logic here
         excs = self.excs
         bounds = [0]
         colors = ['blue', 'red', 'green', 'orange', 'purple', 'magenta']
+        return None, colors
         # find pre bound
         # print('finding pre-test')
         bound = 0
@@ -325,51 +468,99 @@ class MomentByMoment:
 
 
 class ParameterExtractor:
+    """
+    Calculates the pre-calculated parameters.
+
+    Has an option of brute force calculating the parameters or
+    TODO: Implement the newest value: P(F) for forgetting
+    """
     def __init__(self):
         # params = [L0, T, G, S]
         self.params_min = [1e-15 for i in range(4)]
-        self.params_max = [1.0, 1.0, 0.3, 0.1]
+        self.params_min.append(0.01)
+        self.params_max = [1.0, 1.0, 0.3, 0.1, 0.3]
 
     def brute_force_params(self, answers, same, grain=100, L0_fix=None,
-                           T_fix=None, G_fix=None, S_fix=None, ):
+                           T_fix=None, G_fix=None, S_fix=None, F_fix=None):
+        """
+        Check for every parameter what the best value is.
+
+        if x_fix is None then the whole range will be tested.
+        :param answers: the answers given by the students
+        :param same: Whether the answers are switching to a new student.
+        :param grain: integer defining the amount of values being checked
+        :param L0_fix: integer; value of L0. if None, this will return best L0
+        :param T_fix: integer; value of T. if None, this will return best T
+        :param G_fix: integer; value of G. if None, this will return best G
+        :param S_fix: integer; value of S. if None, this will return best S
+        :param F_fix: integer; value of F. if None, this will return best F
+
+        :return: values for L0, T, G, S and F that result in the lowest SSR.
+        """
         # set ranges up
         best_l0 = L0_fix
         best_t = T_fix
         best_g = G_fix
         best_s = S_fix
+        best_f = F_fix
         best_SSR = len(answers) * 999999999999991
         L0_range = self.get_range(L0_fix, 0, grain)
         T_range = self.get_range(T_fix, 1, grain)
         G_range = self.get_range(G_fix, 2, grain)
         S_range = self.get_range(S_fix, 3, grain)
+        F_range = self.get_range(F_fix, 4, grain)
+
+        # Find best values
         for L0 in L0_range:
             # print('------------------------------------\nL0 is now at:{}'.format(L0))
             for T in T_range:
                 for G in G_range:
                     for S in S_range:
-                        new_SSR = self.get_s_s_r(L0, T, G, S, answers, same)
-                        if new_SSR < best_SSR:
-                            best_l0, best_t, best_g, best_s, best_SSR = [L0, T,
-                                                                         G, S,
-                                                                         new_SSR]
-                            # print('best parameters now at L0:{}, T:{}, G:{}, S:{}'.format(L0,
-                            # 	T, G, S))
-        return best_l0, best_t, best_g, best_s
+                        for F in F_range:
+                            # Get SSR for values
+                            new_SSR = self.get_s_s_r(L0, T, G, S, F, answers,
+                                                     same)
 
-    def get_s_s_r(self, L0, T, G, S, answers, sames=None):
+                            # check whether new value improves old values
+                            if new_SSR < best_SSR:
+                                best_l0, best_t, best_g, best_s, \
+                                best_f, best_SSR = [L0, T, G, S, F, new_SSR]
+                                # print('best parameters now at L0:{}, ' +
+                                #    'T:{}, G:{}, S:{}'.format(L0,
+                                # 	 T, G, S))
+        return best_l0, best_t, best_g, best_s, best_f
+
+    def get_s_s_r(self, L0, T, G, S, F_, answers, sames=None):
+        """
+        Calculate the Sum Squared Residu.
+
+        This is a method that defines the fit of the parameters.
+        :param L0: integer; value of L0
+        :param T: integer; value of T
+        :param G: integer; value of G
+        :param S: integer; value of S
+        :param F_: integer; value of F
+        :param answers: list of answers given by students
+        :param sames: list of whether the answer is given by the same student.
+        :return: float; Summed squared residu
+        """
         SSR = 0.0
         S = max(1E-15, S)
         T = max(1E-15, T)
         G = max(1E-15, G)
         L0 = max(1E-15, L0)
+        F_ = max(1E-15, F_)
         L = L0
+        # Make sure that there is a list with sames.
         if sames is None:
             sames = np.ones(answers.size)
             sames[0] = 1
+
+        # for every answer update the SSR.
         for same, answer in zip(sames, answers):
-            if same == 0:
+            if same == 0:  # New student so reset to initial chance of learning
                 L = L0
-            # print(L, T, G, S)
+            # print(L, T, G, S, F)
             SSR += (answer - (L * (1.0 - S) + (1.0 - L) * G)) ** 2
             if answer == 0:
                 L_given_answer = (L * S) / ((L * S) + ((1.0 - L) * (1.0 - G)))
@@ -378,10 +569,21 @@ class ParameterExtractor:
                     (L * (1.0 - S)) + ((1.0 - L) * G))
             if not L_given_answer:
                 print('huh')
-            L = L_given_answer + (1.0 - L_given_answer) * T
+            L = L_given_answer * (1.0 - F_) + (1.0 - L_given_answer) * T
         return SSR
 
     def get_range(self, possible_range, par_id, grain):
+        """
+        helperfunction to get the range for a parameter based on the grain.
+
+        returns either a list of the whole possible values if that value is
+        not set (possible_range=None) else it returns a list containing only
+        once the value of the set value.
+        :param possible_range: Either float with the preset value or None
+        :param par_id: the id of the parameter to find the boundaries for it.
+        :param grain: integer, how finegrained the range must be.
+        :return:
+        """
         if possible_range is None:
             return np.linspace(self.params_min[par_id],
                                self.params_max[par_id],
@@ -390,28 +592,31 @@ class ParameterExtractor:
         return [possible_range]
 
     def smart_ssr(self, answers, same, grain, iterations):
-        best_l0 = self.brute_force_params(answers, same, grain, None, 0.0, 0.0, 0.0)[
-            0]
-        best_t = self.brute_force_params(answers, same, grain, 0.0, None, 0.0, 0.0)[
-            1]
-        best_g = self.brute_force_params(answers, same, grain, 0.0, 0.0, None, 0.0)[
-            2]
-        best_s = self.brute_force_params(answers, same, grain, 0.0, 0.0, 0.0, None)[
-            3]
+        best_l0 = self.brute_force_params(answers, same, grain,
+                                          None, 0.0, 0.0, 0.0, 0.0)[0]
+        best_t = self.brute_force_params(answers, same, grain,
+                                         0.0, None, 0.0, 0.0, 0.0)[1]
+        best_g = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, None, 0.0, 0.0)[2]
+        best_s = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, 0.0, None, 0.0)[3]
+        best_f = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, 0.0, 0.0, None)[4]
         for i in range(iterations):
-            print("best is {}".format([best_l0, best_t, best_g, best_s]))
-            best_l0 = \
-                self.brute_force_params(answers, same, grain, None, best_t, best_g,
-                                      best_s)[0]
-            best_t = \
-                self.brute_force_params(answers, same, grain, best_l0, None, best_g,
-                                      best_s)[1]
-            best_g = \
-                self.brute_force_params(answers, same, grain, best_l0, best_t, None,
-                                      best_s)[2]
-            best_s = self.brute_force_params(answers, same, grain, best_l0, best_t,
-                                           best_g, None)[3]
-        return best_l0, best_t, best_g, best_s
+            print("best is {}".format([best_l0, best_t, best_g, best_s,
+                                       best_f]))
+            best_l0 = self.brute_force_params(answers, same, grain, None,
+                                              best_t, best_g, best_s,
+                                              best_f)[0]
+            best_t = self.brute_force_params(answers, same, grain, best_l0,
+                                             None, best_g, best_s, best_f)[1]
+            best_g = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, None, best_s, best_f)[2]
+            best_s = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, best_g, None, best_f)[3]
+            best_f = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, best_g, best_s, None)[4]
+        return best_l0, best_t, best_g, best_s, best_f
 
 
 ex = ParameterExtractor()
@@ -421,208 +626,15 @@ ex = ParameterExtractor()
 
 
 if __name__ == "__main__":  # TESTING
-    answers = [0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-               1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1,
-               1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
-               1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
-               0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-               0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-               1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1,
-               0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-               0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0,
-               1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-               1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1,
-               1, 1]
-    same = [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
-            0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-            1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-            1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-            1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1,
-            1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
     # ex.params_max = [1.0 for i in range(4)]
     # print(ex.brute_force_params(answers, same))
-
-    print(ex.get_s_s_r(*ex.smart_ssr(answers, same, 1000, 4), answers, same))
-    print(ex.get_s_s_r(0.955, 0.3, 0.299, 0.068, answers, same))
-    print(ex.get_s_s_r(1.0, 0.001, 0.001, 0.07171717, answers, same))
+    # print(ex.get_s_s_r(*ex.smart_ssr(answers, same, 1000, 5), answers, same))
+    print(ex.get_s_s_r(0.955, 0.3, 0.299, 0.068, .062, answers, same))
+    print(ex.get_s_s_r(1.0, 0.001, 0.001, 0.07171717, .062, answers, same))
+    dh = DataHandler()
+    for loid in np.unique(dh.learn_obj_ids[1:]):
+        print("getting parameters for goal {}".format(loid))
+        dh.set_ps_correct_calc(loid)
+        print("Best parameters are {}".format([dh.m2m.p_l0, dh.m2m.p_T,
+                                               dh.m2m.p_G, dh.m2m.p_S,
+                                               dh.m2m.p_F]))

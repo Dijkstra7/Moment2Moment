@@ -43,21 +43,22 @@ class GraphGUI(tk.Tk):
         graph_list = self.handler.get_graph_variables(self.user_id,
                                                       method=self.method,
                                                       oid=self.objective_id)
-        # boundary_list = self.handler.boundary_list[:]
-        # color_list = self.handler.color_list[:len(boundary_list) - 1]
-        t_list = self.handler.get_dummy_graph_variables(self.user_id,
+        t_list = self.handler.get_graph_variables(self.user_id,
                                                         method=self.method,
                                                         oid=self.objective_id)
         self.a.clear()
         self.a.plot(range(len(graph_list)), graph_list)
+        print(graph_list)
         # self.a.plot(range(len(graph_list)), t_list)
 
+        # boundary_list = self.handler.boundary_list[:]
+        # color_list = self.handler.color_list[:len(boundary_list) - 1]
         # for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
         #                      color_list):
         #     self.a.broken_barh([(b1, b2 - b1)],
         #                        (.15 * max(graph_list), .7 * max(graph_list)),
         #                        facecolors=c)
-        print(len(graph_list), max(graph_list))
+        # print(len(graph_list), max(graph_list))
 
     def setup_graph(self):
         self.f = Figure(figsize=(5, 5), dpi=100)
