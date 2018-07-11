@@ -522,7 +522,7 @@ class ParameterExtractor:
                                                      same)
 
                             # check whether new value improves old values
-                            if new_SSR < best_SSR:
+                            if new_SSR <= best_SSR:
                                 best_l0, best_t, best_g, best_s, \
                                 best_f, best_SSR = [L0, T, G, S, F, new_SSR]
                                 # print('best parameters now at L0:{}, ' +
@@ -619,18 +619,13 @@ class ParameterExtractor:
         return best_l0, best_t, best_g, best_s, best_f
 
 
-ex = ParameterExtractor()
 
 
 
 
 
 if __name__ == "__main__":  # TESTING
-    # ex.params_max = [1.0 for i in range(4)]
-    # print(ex.brute_force_params(answers, same))
-    # print(ex.get_s_s_r(*ex.smart_ssr(answers, same, 1000, 5), answers, same))
-    print(ex.get_s_s_r(0.955, 0.3, 0.299, 0.068, .062, answers, same))
-    print(ex.get_s_s_r(1.0, 0.001, 0.001, 0.07171717, .062, answers, same))
+    ex = ParameterExtractor()
     dh = DataHandler()
     for loid in np.unique(dh.learn_obj_ids[1:]):
         print("getting parameters for goal {}".format(loid))
