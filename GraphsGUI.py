@@ -40,25 +40,27 @@ class GraphGUI(tk.Tk):
 
     def update_graph(self, huh=None):
         # cmap = plt.get_cmap('cool')
-        graph_list = self.handler.get_graph_variables(self.user_id,
-                                                      method=self.method,
-                                                      oid=self.objective_id)
+        graph_n, graph_l, graph_f = self.handler.get_graph_variables(
+            self.user_id, method=self.method, oid=self.objective_id)
         t_list = self.handler.get_graph_variables(self.user_id,
                                                         method=self.method,
                                                         oid=self.objective_id)
         self.a.clear()
-        self.a.plot(range(len(graph_list)), graph_list)
-        print(graph_list)
-        # self.a.plot(range(len(graph_list)), t_list)
+        self.a.plot(range(len(graph_n)), graph_n, label="P(Jn)")
+        self.a.plot(range(len(graph_n)), graph_l, label="P(Jl)")
+        self.a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
+        self.a.legend()
+        print(graph_n)
+        # self.a.plot(range(len(graph_n)), t_list)
 
         # boundary_list = self.handler.boundary_list[:]
         # color_list = self.handler.color_list[:len(boundary_list) - 1]
         # for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
         #                      color_list):
         #     self.a.broken_barh([(b1, b2 - b1)],
-        #                        (.15 * max(graph_list), .7 * max(graph_list)),
+        #                        (.15 * max(graph_n), .7 * max(graph_n)),
         #                        facecolors=c)
-        # print(len(graph_list), max(graph_list))
+        # print(len(graph_n), max(graph_n))
 
     def setup_graph(self):
         self.f = Figure(figsize=(5, 5), dpi=100)
@@ -85,20 +87,25 @@ class GraphGUI(tk.Tk):
                                                                 self.objective_id)
         self.f.savefig(fname=fname)
 
-    def save_all_graphs(self, dirname='graphs/'):
+    def save_all_graphs(self, dirname='graphs_forgot/'):
         for user in self.handler.get_users():
             for learn_obj in np.unique(self.handler.learn_obj_ids)[1:]:
                 try:
                     f = matplotlib.pyplot.figure(figsize=(5, 5), dpi=100)
                     axes = matplotlib.pyplot.gca()
-                    axes.set_ylim([0, 0.35])
+                    # axes.set_ylim([0, 0.35])
                     a = f.add_subplot(111)
-                    graph_list = self.handler.get_graph_variables(user,
-                                                                  method=self.method,
-                                                                  oid=learn_obj)
+                    graph_list, jl, jf = self.handler.get_graph_variables(user,
+                                                            method=self.method,
+                                                            oid=learn_obj)
                     # boundary_list = self.handler.boundary_list[:]
                     # color_list = self.handler.color_list[:len(boundary_list) - 1]
-                    a.plot(range(len(graph_list)), graph_list)
+                    a.plot(range(len(graph_list)), graph_list,
+                           label="with forgetting")
+                    # a.plot(range(len(graph_list)), jl, label="old graph")
+                    a.plot(range(len(graph_list)), [0 for _ in range(len(
+                        graph_list))])
+                    # a.legend()
                     # for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
                     #                      color_list):
                     #     a.broken_barh([(b1, b2 - b1)],

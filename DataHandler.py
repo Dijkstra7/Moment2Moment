@@ -23,11 +23,11 @@ class DataHandler:
         self.load_student_workbook(fname)
 
         # Set pre calculated brute force parameters
-        self.l0s = [0.001, 0.027, 0.536, .666]  # From bruteforceparameters
-        self.ts = [	0.149, 0.059, 0.101, .007]
-        self.gs = [0.299, 0.250, 0.232, .299]
-        self.ss = [0.100, 0.100, 0.100, .1]
-        self.fs = [0.05, 0.05, 0.05, 0.05]
+        self.l0s = [0.663, 0.648, 0.704, .864]  # From bruteforceparameters
+        self.ts = [0.367, 0.114, 0.110, .172]
+        self.gs = [0.269, 0.241, 0.124, .199]
+        self.ss = [0.099, 0.099, 0.099, .099]
+        self.fs = [0.01, 0.029, 0.015, 0.01]
 
         # Retrieve the color belonging to the exercise IDS.
         self.pre_ids, self.c_in_ids, self.c_ex_ids, self.a_ex_ids, \
@@ -173,12 +173,11 @@ class DataHandler:
         if oid is not None:
             print("and for skill id {}".format(oid))
         self.set_ps_correct(oid)
-        p_j = self.m2m.get_p_j(user_id=user_id, method=method,
-                               objective_id=oid)
-        self.graph_length = len(p_j)
+        p_jn, p_jl, p_jf = self.m2m.get_p_js(user_id=user_id, method=method,
+                                             objective_id=oid)
+        self.graph_length = len(p_jl)
         self.boundary_list, self.color_list = self.m2m.get_color_bars()
-        return self.m2m.get_p_j(user_id=user_id, method=method,
-                                objective_id=oid)
+        return [p_jn, p_jl, p_jf]
 
     def set_ps_correct_calc(self, oid):
          """ Old method to generate the pre calculated parameters. """
@@ -255,11 +254,25 @@ class MomentByMoment:
         self.p_S = s
         self.p_F = f
 
-    def get_p_j(self, user_id, method='all', objective_id=None):
-        """ Get and calculate the P(J).
+    def get_p_jn(self, user_id, method='all', objective_id=None):
+        """
+        Calculate P(J_n).
 
-        First calculate P(L) and P(T) than with that calculate P(J) and
-        return it.
+        Calculate by P(J_n) = P(J_l) - P(J_f).
+        :param user_id:
+        :param method:
+        :param objective_id:
+        :return:
+        """
+        return None
+
+
+
+    def get_p_js(self, user_id, method='all', objective_id=None):
+        """ Get and calculate the P(J_n).
+
+        P(J_n) = P(J_l) - P(J_f). This is calculated with P(L), P(~L^T),
+        P(~L^~T) and P(L^F).
 
         :param user_id: string; the id of the user for which we want P(J).
         :param method: string; How we handle multiple answers for one exercise.
@@ -275,8 +288,14 @@ class MomentByMoment:
         # Calculate P(~l_n^T) and P(~L_n~T)
         p_not_ln_t = [(1 - ln) * self.p_T for ln in p_ln]
         p_not_ln_not_t = [(1 - ln) * (1 - self.p_T) for ln in p_ln]
-        return self.calculate_p_j(user_answers, p_ln, p_not_ln_t,
+        p_ln_f = [ln * self.p_F for ln in p_ln]
+        p_ln_not_f = [ln* (1- self.p_F) for ln in p_ln]
+
+        p_jl = self.calculate_p_jl(user_answers, p_ln, p_not_ln_t,
                                   p_not_ln_not_t)
+        p_jf = self.calculate_p_jf(user_answers, p_ln_f, p_not_ln_t,
+                                   p_not_ln_not_t, p_ln_not_f)
+        return [jl-jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf
 
     def filter_answers(self, user_id, method, objectives_id):
         """ Filter the answers on user, objective and method.
@@ -286,19 +305,20 @@ class MomentByMoment:
         :param objectives_id: string; The ID for the objectives.
         :return: list of answers to calculate P(J) for.
         """
-        user_answers = self.answers[:]
-        user_objectives = self.handler.learn_obj_ids[:]
-        user_ids = self.user_ids[:]
-        user_excs = self.handler.exercise_ids[:]
-        user_dates = self.handler.dates[:]
+
+        # Get the ID's of which data is to be selected
         self.chosen_ids = np.where(
             (self.handler.learn_obj_ids == objectives_id) &
             (self.user_ids == user_id))
 
-        user_answers = user_answers[self.chosen_ids]
-        user_objectives = user_objectives[self.chosen_ids]
-        user_excs = user_excs[self.chosen_ids]
-        user_ids = user_ids[self.chosen_ids]
+        # Get the data.
+        user_answers = self.answers[self.chosen_ids]
+        user_objectives = self.handler.learn_obj_ids[self.chosen_ids]
+        user_ids = self.user_ids[self.chosen_ids]
+        user_excs = self.handler.exercise_ids[self.chosen_ids]
+        user_dates = self.handler.dates[self.chosen_ids]
+
+        # Filter the data according to method.
         if method not in ['all', 'first', 'second', 'all but first', 'last']:
             raise NotImplementedError
         if method == 'first':
@@ -309,19 +329,40 @@ class MomentByMoment:
             user_answers = self.filter_first(user_answers, user_excs)
         if method == 'last':
             user_answers = self.filter_all_but_last(user_answers, user_excs)
+
+        # Store the exercises.
         self.excs = user_excs
         return user_answers
 
     def filter_all_but_first(self, answers, exercise_ids):
+        """
+        Filter out all but the first answers per exercise.
+
+        :param answers:         list of answers, to be filtered.
+        :param exercise_ids:    list of exercise ID's to indicate to which
+            exercise answers belong.
+        :return: list of all but the first answers for an exercise.
+        """
         exercises_processed = []
         return_answers = []
         for i in range(len(answers)):
+            # If it is the first time that I see this exercise:
             if exercise_ids[i] not in exercises_processed:
+                # Keep answer.
                 return_answers.append(answers[i])
+                # Store exercise ID.
                 exercises_processed.append(exercise_ids[i])
         return return_answers
 
     def filter_all_but_second(self, answers, exercise_ids):
+        """
+        Filter out all but the second answers per exercise.
+
+        :param answers:         list of answers, to be filtered.
+        :param exercise_ids:    list of exercise ID's to indicate to which
+            exercise answers belong.
+        :return: list of all but the second answers for an exercise.
+        """
         exercises_processed = []
         exercises_processed_twice = []
         return_answers = []
@@ -335,6 +376,14 @@ class MomentByMoment:
         return return_answers
 
     def filter_first(self, answers, exercise_ids):
+        """
+        Filter out all the first answers per exercise.
+
+        :param answers:         list of answers, to be filtered.
+        :param exercise_ids:    list of exercise ID's to indicate to which
+            exercise answers belong.
+        :return: list of all the first answers for an exercise.
+        """
         exercises_processed = []
         return_answers = []
         for i in range(len(answers)):
@@ -345,6 +394,15 @@ class MomentByMoment:
         return return_answers
 
     def filter_all_but_last(self, answers, exercise_ids):
+        """
+        Filter out all but the last answers per exercise.
+
+        :param answers:         list of answers, to be filtered.
+        :param exercise_ids:    list of exercise ID's to indicate to which
+            exercise answers belong.
+        :return: list of all but the last answers for an exercise.
+        """
+        # Reverse list, so last answers are first.
         answers = answers[::-1]
         exercises_processed = []
         return_answers = []
@@ -355,6 +413,11 @@ class MomentByMoment:
         return return_answers[::-1]
 
     def calculate_ln(self, answers):
+        """
+        Calculate P(L_n)
+        :param answers: list of answers over which we calculate P(L_n)
+        :return: a list of values of P(L_n)
+        """
         p_ln = []
         for answer_id in range(len(answers)):
             if len(p_ln) == 0:
@@ -371,8 +434,43 @@ class MomentByMoment:
             p_ln.append(ln_prev_given_res + (1 - ln_prev_given_res) * self.p_T)
         return p_ln
 
-    def calculate_p_j(self, answers, ln, n_ln_t, n_ln_n_t):
-        p_j = []
+    def calculate_p_jf(self, answers, ln_f, n_ln_t, n_ln_n_t, ln_nf):
+        p_jf = []
+        for a_id in range(len(answers) - 2):
+            p_ln_f = ln_f[a_id]
+            g = self.p_G
+            t = self.p_T
+            s = self.p_S
+            f = self.p_F
+            if answers[a_id + 1] == 1:
+                if answers[a_id + 2] == 1:                      # C C
+                    a_l_nf =  (1-s)*(1-f)*(1-s) + (1-s)* f   * g
+                    a_l_f =   g    * t   *(1-s) + g    *(1-t)* g
+                    a_nl_t =  a_l_nf
+                    a_nl_nt = a_l_f
+                else:                                           # C ~C
+                    a_l_nf =  (1-s)*(1-f)* s    + (1-s)* f   *(1-g)
+                    a_l_f =   g    * t   * s    + g    *(1-t)*(1-g)
+                    a_nl_t =  a_l_nf
+                    a_nl_nt = a_l_f
+            else:
+                if answers[a_id + 2] == 1:                      # ~C C
+                    a_l_nf =  s    *(1-f)*(1-s) + s    * f   * g
+                    a_l_f =   (1-g)* t   *(1-s) + (1-g)*(1-t)* g
+                    a_nl_t =  a_l_nf
+                    a_nl_nt = a_l_f
+                else:                                           # ~C ~C
+                    a_l_nf =  s    *(1-f)* s    + s    * f   *(1-g)
+                    a_l_f =   (1-g)* t   * s    + (1-g)*(1-t)*(1-g)
+                    a_nl_t =  a_l_nf
+                    a_nl_nt = a_l_f
+            a12 = a_nl_t* n_ln_t[a_id] + a_nl_nt * n_ln_n_t[a_id] + \
+                  a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
+            p_jf.append(a_l_f * p_ln_f / a12)
+        return p_jf
+
+    def calculate_p_jl(self, answers, ln, n_ln_t, n_ln_n_t):
+        p_jl = []
         for a_id in range(len(answers) - 2):
             p_l = ln[a_id]
             p_nl_t = n_ln_t[a_id]
@@ -385,19 +483,19 @@ class MomentByMoment:
                     a_ln = (1 - s) ** 2
                     a_n_ln_n_t = g * (1 - t) * g + g * t * (1 - s)
                 else:  # RW
-                    a_ln = s * (1 - self.p_S)
+                    a_ln = s * (1 - s)
                     a_n_ln_n_t = g * (1 - t) * (1 - g) + g * t * s
             else:
                 if answers[a_id + 2] == 1:  # WR
-                    a_ln = s * (1 - self.p_S)
+                    a_ln = s * (1 - s)
                     a_n_ln_n_t = g * (1 - t) * (1 - g) + (1 - g) * t * (1 - s)
                 else:  # WW
                     a_ln = s ** 2
                     a_n_ln_n_t = (1 - g) * (1 - t) * (1 - g) + (1 - g) * t * s
             a_n_ln_t = a_ln
             a12 = p_l * a_ln + p_nl_t * a_n_ln_t + x * a_n_ln_n_t
-            p_j.append(a_n_ln_t * p_nl_t / a12)
-        return p_j
+            p_jl.append(a_n_ln_t * p_nl_t / a12)
+        return p_jl
 
     def get_color_bars(self):
         # TODO: Update logic here
