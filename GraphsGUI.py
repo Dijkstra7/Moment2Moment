@@ -40,7 +40,7 @@ class GraphGUI(tk.Tk):
 
     def update_graph(self, huh=None):
         # cmap = plt.get_cmap('cool')
-        graph_n, graph_l, graph_f = self.handler.get_graph_variables(
+        graph_n, graph_l, graph_f, split = self.handler.get_graph_variables(
             self.user_id, method=self.method, oid=self.objective_id)
         t_list = self.handler.get_graph_variables(self.user_id,
                                                         method=self.method,
@@ -52,14 +52,17 @@ class GraphGUI(tk.Tk):
         self.a.legend()
         print(graph_n)
         # self.a.plot(range(len(graph_n)), t_list)
-
-        # boundary_list = self.handler.boundary_list[:]
-        # color_list = self.handler.color_list[:len(boundary_list) - 1]
-        # for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
-        #                      color_list):
-        #     self.a.broken_barh([(b1, b2 - b1)],
-        #                        (.15 * max(graph_n), .7 * max(graph_n)),
-        #                        facecolors=c)
+        height = max(max(graph_n), max(graph_l), max(graph_f))
+        low = min(min(graph_n), min(graph_l), min(graph_f))
+        self.a.plot([low, height], [split, split])
+        boundary_list = self.handler.boundary_list[:]
+        color_list = self.handler.color_list[:len(boundary_list) - 1]
+        for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
+                             color_list):
+            self.a.broken_barh([(b1, b2 - b1)],
+                               (low + .15 * (height-low), low + .7 * (
+                                       height-low)),
+                               facecolors=c)
         # print(len(graph_n), max(graph_n))
 
     def setup_graph(self):

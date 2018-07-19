@@ -17,7 +17,7 @@ class DataHandler:
     created.
     """
     def __init__(self,
-                 fname="C:/Users/rick dijkstra/Downloads/LearningcurvefileAllData_onlyfirstattempts_anoniem29-5+KAS (3).xlsm"):
+                 fname="resultaten-radboud-all_anoniem samengevoegd_editforfirstattempts.xlsx"):
         # Load the workbook.
         print("loading workbook")
         self.load_student_workbook(fname)
@@ -39,6 +39,8 @@ class DataHandler:
     def load_student_workbook(self, fname):
         """
         Loads the workbook with the student actions, if possible from pickle.
+        Note: The make up of the workbook should fit in what columns are being
+        extracted.
 
         :param fname: the path to the excel file.
         """
@@ -59,11 +61,11 @@ class DataHandler:
             self.ws = wb.active
             self.dates = self.get_column(1)
             self.times = self.get_column(2)
-            self.user_ids = self.get_column(3)
-            self.learn_obj_ids = self.get_column(4)
+            self.user_ids = self.get_column(4)
+            self.learn_obj_ids = self.get_column(6)
             self.exercise_ids = self.get_column(5)
-            self.corrects = self.get_column(6)
-            self.ability_scores = self.get_column(7)
+            self.corrects = self.get_column(7)
+            self.ability_scores = self.get_column(8)
             pickle.dump([self.dates, self.times, self.user_ids,
                          self.learn_obj_ids, self.exercise_ids,
                          self.corrects, self.ability_scores], open(fname,
@@ -173,11 +175,12 @@ class DataHandler:
         if oid is not None:
             print("and for skill id {}".format(oid))
         self.set_ps_correct(oid)
-        p_jn, p_jl, p_jf = self.m2m.get_p_js(user_id=user_id, method=method,
+        p_jn, p_jl, p_jf, split = self.m2m.get_p_js(user_id=user_id,
+                                                 method=method,
                                              objective_id=oid)
         self.graph_length = len(p_jl)
         self.boundary_list, self.color_list = self.m2m.get_color_bars()
-        return [p_jn, p_jl, p_jf]
+        return [p_jn, p_jl, p_jf, split]
 
     def set_ps_correct_calc(self, oid):
          """ Old method to generate the pre calculated parameters. """
@@ -200,8 +203,8 @@ class DataHandler:
         Set the corresponding precalculated parameters for the learning goal.
         :param oid: string representing which learning goal is used.
         """
-        loids = ['a7771', 'a7789', 'a8025', 'a7579']  # hardcoded for this file
-        position = loids.index(oid)
+        loids = ['7771', '7789', '8025', '7579']  # hardcoded for this file
+        position = loids.index(str(oid))
 
         l = self.l0s[position]
         t = self.ts[position]
@@ -267,7 +270,6 @@ class MomentByMoment:
         return None
 
 
-
     def get_p_js(self, user_id, method='all', objective_id=None):
         """ Get and calculate the P(J_n).
 
@@ -280,7 +282,8 @@ class MomentByMoment:
         :returns: list of P(J) per answer.
         """
         # get the correct answers based on methods.
-        user_answers = self.filter_answers(user_id, method, objective_id)
+        user_answers, split = self.filter_answers(user_id, method,
+                                                  objective_id)
 
         #calculate P(L_n) based on the answers.
         p_ln = self.calculate_ln(user_answers)
@@ -295,7 +298,7 @@ class MomentByMoment:
                                   p_not_ln_not_t)
         p_jf = self.calculate_p_jf(user_answers, p_ln_f, p_not_ln_t,
                                    p_not_ln_not_t, p_ln_not_f)
-        return [jl-jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf
+        return [jl-jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf, split
 
     def filter_answers(self, user_id, method, objectives_id):
         """ Filter the answers on user, objective and method.
@@ -317,6 +320,7 @@ class MomentByMoment:
         user_ids = self.user_ids[self.chosen_ids]
         user_excs = self.handler.exercise_ids[self.chosen_ids]
         user_dates = self.handler.dates[self.chosen_ids]
+        user_abs = self.handler.ability_scores[self.chosen_ids]
 
         # Filter the data according to method.
         if method not in ['all', 'first', 'second', 'all but first', 'last']:
@@ -332,7 +336,15 @@ class MomentByMoment:
 
         # Store the exercises.
         self.excs = user_excs
-        return user_answers
+        self.dats = user_dates
+
+        split = -1
+        print(user_abs[split+1])
+        while user_abs[split+1] == 'NULL' and split<len(user_abs)-2:
+            split = split+1
+        if user_abs[split] == 'NULL':
+            split = None
+        return user_answers, split
 
     def filter_all_but_first(self, answers, exercise_ids):
         """
@@ -435,6 +447,17 @@ class MomentByMoment:
         return p_ln
 
     def calculate_p_jf(self, answers, ln_f, n_ln_t, n_ln_n_t, ln_nf):
+        """
+        Calculates P(J_f). Based upon the precalculated changes P(L_n^F),
+        P(~L_n^T), P(~L_n^~T) and P(L_n^~F)
+
+        :param answers:
+        :param ln_f:
+        :param n_ln_t:
+        :param n_ln_n_t:
+        :param ln_nf:
+        :return:
+        """
         p_jf = []
         for a_id in range(len(answers) - 2):
             p_ln_f = ln_f[a_id]
@@ -470,6 +493,16 @@ class MomentByMoment:
         return p_jf
 
     def calculate_p_jl(self, answers, ln, n_ln_t, n_ln_n_t):
+        """
+        Calculate P(J_l). Was previous just P(J).
+
+        :param answers:     Whether student answered correct.
+        :param ln:          precalculated P(L_n)
+        :param n_ln_t:      precalculated P(~L_n^T)
+        :param n_ln_n_t:    precalculated P(~L_n^T)
+        :return:            List of P(J_l) for every answer except the last
+                            two.
+        """
         p_jl = []
         for a_id in range(len(answers) - 2):
             p_l = ln[a_id]
@@ -500,69 +533,71 @@ class MomentByMoment:
     def get_color_bars(self):
         # TODO: Update logic here
         excs = self.excs
-        bounds = [0]
-        colors = ['blue', 'red', 'green', 'orange', 'purple', 'magenta']
-        return None, colors
+        dats = self.dats
+        bounds = [0, 0, 0, 0, 0, 0, 0]
+        colors = ['royalblue', 'darkorange', 'silver', 'gold', 'mediumblue',
+                  'olivedrab']
+
         # find pre bound
         # print('finding pre-test')
-        bound = 0
-        e = excs[0]
-        print(e)
-        while e in self.handler.pre_ids:
-            bound += 1
-            e = excs[bound]
-        # print(e)
-        bounds.append(bound)
 
-        # Find class instruction
-        # print('finding instruction exercises')
-        bound += 1
-        e = excs[bound + 1]
-        while e in self.handler.c_in_ids:
-            bound += 1
-            e = excs[bound]
         # print(e)
-        bounds.append(bound)
-
-        # Find class exercise
-        # print('finding class exercises')
-        bound += 1
-        e = excs[bound + 1]
         try:
+            e = excs[0]
+            print(e)
+
+            while e in self.handler.pre_ids:
+                bounds = [bounds[i] + 1 if i > 0 else bounds[i] for i in
+                          range(len(bounds))]
+                excs = excs[1:]
+                dats = dats[1:]
+                e = excs[0]
+
+            # Find class instruction
+            # print('finding instruction exercises')
+            while e in self.handler.c_in_ids:
+                bounds = [bounds[i] + 1 if i > 1 else bounds[i] for i in
+                          range(len(bounds))]
+                excs = excs[1:]
+                dats = dats[1:]
+                e = excs[0]
+
+            # Find class exercise
+            # print('finding class exercises')
             while e in self.handler.c_ex_ids:
-                bound += 1
-                e = excs[bound]
+                bounds = [bounds[i] + 1 if i > 2 else bounds[i] for i in
+                          range(len(bounds))]
+                excs = excs[1:]
+                dats = dats[1:]
+                e = excs[0]
+
+            # Find class adaptive
+            # print('finding class adaptive')
+            d = dats[0]
+            while dats[1] == d and e not in self.handler.post_ids:
+                bounds = [bounds[i] + 1 if i > 3 else bounds[i] for i in
+                          range(len(bounds))]
+                excs = excs[1:]
+                dats = dats[1:]
+                e = excs[0]
+
+            # Find repetition adaptive
+            # print('finding repeated adaptive exercises')
+            while e not in self.handler.post_ids:
+                bounds = [bounds[i] + 1 if i > 4 else bounds[i] for i in
+                          range(len(bounds))]
+                excs = excs[1:]
+                dats = dats[1:]
+                e = excs[0]
+
+            # Find boundary post-test
+            # print('find post-test')
+            bounds[-1] = len(self.excs) - 1
+
         except IndexError:
-            bound -= 1
-        # print(e)
-        bounds.append(bound)
-
-        # Find class adaptive
-        bound += 1
-        dates = self.handler.dates[self.chosen_ids]
-        d = dates[bound]
-        while dates[bound + 1] == d:
-            bound += 1
-        # print(excs[bound])
-        bounds.append(bound)
-
-        # Find repetition adaptive
-        # print('finding repeated adaptive exercises')
-        bound += 1
-        e = excs[bound + 1]
-        while e not in self.handler.post_ids:
-            bound += 1
-            e = excs[bound]
-        # print(e)
-        bounds.append(bound)
-
-        # print('find post-test')
-        while bound < len(excs) - 1:
-            bound += 1
-        # print(excs[bound])
-        bounds.append(bound)
-        # print(bounds)
-        return (bounds, colors)
+            pass
+        print(bounds)
+        return bounds, colors
 
 
 class ParameterExtractor:
