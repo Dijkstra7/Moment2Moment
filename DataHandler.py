@@ -339,12 +339,14 @@ class MomentByMoment:
         self.dats = user_dates
 
         split = -1
-        print(user_abs[split+1])
         while user_abs[split+1] == 'NULL' and split<len(user_abs)-2:
             split = split+1
+            print(user_abs[split+1])
+        split += 1
         if user_abs[split] == 'NULL':
-            split = None
-        return user_answers, split
+            return user_answers, (None, '')
+        print(split)
+        return user_answers, (split, user_abs[split])
 
     def filter_all_but_first(self, answers, exercise_ids):
         """

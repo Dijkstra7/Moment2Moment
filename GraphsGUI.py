@@ -47,23 +47,21 @@ class GraphGUI(tk.Tk):
                                                         oid=self.objective_id)
         self.a.clear()
         self.a.plot(range(len(graph_n)), graph_n, label="P(Jn)")
-        self.a.plot(range(len(graph_n)), graph_l, label="P(Jl)")
+        # self.a.plot(range(len(graph_n)), graph_l, label="P(Jl)")
         self.a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
-        self.a.legend()
-        print(graph_n)
-        # self.a.plot(range(len(graph_n)), t_list)
         height = max(max(graph_n), max(graph_l), max(graph_f))
         low = min(min(graph_n), min(graph_l), min(graph_f))
-        self.a.plot([low, height], [split, split])
+        self.a.plot([split[0], split[0]], [low, height], color="black",
+                    label=str(split[1]))
+        self.a.legend()
         boundary_list = self.handler.boundary_list[:]
         color_list = self.handler.color_list[:len(boundary_list) - 1]
         for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
                              color_list):
             self.a.broken_barh([(b1, b2 - b1)],
-                               (low + .15 * (height-low), low + .7 * (
+                               (low + .15 * (height-low), height - .15 * (
                                        height-low)),
                                facecolors=c)
-        # print(len(graph_n), max(graph_n))
 
     def setup_graph(self):
         self.f = Figure(figsize=(5, 5), dpi=100)
