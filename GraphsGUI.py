@@ -51,9 +51,13 @@ class GraphGUI(tk.Tk):
         self.a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
         height = max(max(graph_n), max(graph_l), max(graph_f))
         low = min(min(graph_n), min(graph_l), min(graph_f))
-        self.a.plot([split[0], split[0]], [low, height], color="black",
-                    label=str(split[1]))
         self.a.legend()
+        self.a.plot([split[0], split[0]], [low, height], color="black")
+        self.a.text(split[0], height, str(split[1]),
+                    horizontalalignment='center',
+                    verticalalignment='center', bbox=dict(facecolor='white',
+                                                          edgecolor='white',
+                                                          alpha=1.0))
         boundary_list = self.handler.boundary_list[:]
         color_list = self.handler.color_list[:len(boundary_list) - 1]
         for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
@@ -88,7 +92,8 @@ class GraphGUI(tk.Tk):
                                                                 self.objective_id)
         self.f.savefig(fname=fname)
 
-    def save_all_graphs(self, dirname='graphs_forgot/'):
+    def save_all_graphs(self, dirname='Graphs_N/'):
+        errors = 0
         for user in self.handler.get_users():
             for learn_obj in np.unique(self.handler.learn_obj_ids)[1:]:
                 try:
@@ -96,23 +101,35 @@ class GraphGUI(tk.Tk):
                     axes = matplotlib.pyplot.gca()
                     # axes.set_ylim([0, 0.35])
                     a = f.add_subplot(111)
-                    graph_list, jl, jf = self.handler.get_graph_variables(user,
-                                                            method=self.method,
-                                                            oid=learn_obj)
-                    # boundary_list = self.handler.boundary_list[:]
-                    # color_list = self.handler.color_list[:len(boundary_list) - 1]
-                    a.plot(range(len(graph_list)), graph_list,
-                           label="with forgetting")
-                    # a.plot(range(len(graph_list)), jl, label="old graph")
-                    a.plot(range(len(graph_list)), [0 for _ in range(len(
-                        graph_list))])
+                    graph_n, graph_l, graph_f, split = \
+                        self.handler.get_graph_variables(user,
+                                                         method=self.method,
+                                                         oid=learn_obj)
+                    # self.a.plot(range(len(graph_n)), graph_l, label="P(Jl)")
+                    # a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
+                    height = max(graph_n)
+                    low = min(graph_n)
+                    height = height + .05*(height-low)
                     # a.legend()
-                    # for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
-                    #                      color_list):
-                    #     a.broken_barh([(b1, b2 - b1)],
-                    #                   (
-                    #                   .15 * max(graph_list), .7 * max(graph_list)),
-                    #                   facecolors=c)
+                    a.plot([split[0], split[0]], [low, height], color="black")
+                    if split[0] is not None:
+                        a.text(max(split[0], len(graph_n)/50), height,
+                               str(split[1]),
+                               horizontalalignment='center',
+                               verticalalignment='center',
+                               bbox=dict(facecolor='white', edgecolor='white',
+                                         alpha=1.0))
+                    a.plot(range(len(graph_n)), graph_n, label="P(Jn)")
+
+                    boundary_list = self.handler.boundary_list[:]
+                    color_list = self.handler.color_list[:len(boundary_list) - 1]
+                    for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
+                                         color_list):
+                        a.broken_barh([(b1, b2 - b1)],
+                                      (low + .25 * (height - low),
+                                       .5 * (height - low)),
+                                      facecolors=c)
+                    print("huh")
                     fname = 'student {} objective {}.png'.format(user,
                                                                  learn_obj)
                     f.savefig(fname=dirname + fname)
@@ -123,7 +140,8 @@ class GraphGUI(tk.Tk):
                     print("failed saving student {} "
                           "objective {} because of {}".format(user, learn_obj,
                                                               e))
-        print("saved all graphs")
+                    errors += 1
+        print("saved all graphs with {} errors".format(errors))
 
 class StartPage(tk.Frame):
     """ First page that is shown

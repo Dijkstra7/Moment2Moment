@@ -547,14 +547,15 @@ class MomentByMoment:
         try:
             e = excs[0]
             print(e)
+            if excs[1] in self.handler.pre_ids:
+                while e in self.handler.pre_ids:
+                    bounds = [bounds[i] + 1 if i > 0 else bounds[i] for i in
+                              range(len(bounds))]
+                    excs = excs[1:]
+                    dats = dats[1:]
+                    e = excs[0]
 
-            while e in self.handler.pre_ids:
-                bounds = [bounds[i] + 1 if i > 0 else bounds[i] for i in
-                          range(len(bounds))]
-                excs = excs[1:]
-                dats = dats[1:]
-                e = excs[0]
-
+            d = dats[0]
             # Find class instruction
             # print('finding instruction exercises')
             while e in self.handler.c_in_ids:
@@ -570,31 +571,42 @@ class MomentByMoment:
                 bounds = [bounds[i] + 1 if i > 2 else bounds[i] for i in
                           range(len(bounds))]
                 excs = excs[1:]
+                d = dats[0]
                 dats = dats[1:]
                 e = excs[0]
 
             # Find class adaptive
             # print('finding class adaptive')
-            d = dats[0]
-            while dats[1] == d and e not in self.handler.post_ids:
+            while dats[0].strftime("%d") == d.strftime("%d") \
+                    and not e == self.excs[0]:
                 bounds = [bounds[i] + 1 if i > 3 else bounds[i] for i in
                           range(len(bounds))]
                 excs = excs[1:]
                 dats = dats[1:]
                 e = excs[0]
 
-            # Find repetition adaptive
+            # Find repetition adaptive and post test boundary
+            # Done by finding all post-test exercises backwards.
             # print('finding repeated adaptive exercises')
-            while e not in self.handler.post_ids:
-                bounds = [bounds[i] + 1 if i > 4 else bounds[i] for i in
-                          range(len(bounds))]
+            excs = excs[::-1]
+            dats = dats[::-1]
+            bounds[-1] = len(self.excs) - 1
+            bounds[-2] = bounds[-1]
+            d = dats[0]
+            print(dats)
+            print("{} -- {}".format(d, dats[1]))
+            found_post = False
+            while dats[0].strftime("%d") == d.strftime("%d"):
+                print("Checking date {}, exercise is {}".format(dats[1],
+                                                                excs[0]))
+                bounds[-2] -= 1
+                if excs[0] in self.handler.post_ids:
+                    print("this is in the post-test")
+                    found_post = True
                 excs = excs[1:]
                 dats = dats[1:]
-                e = excs[0]
-
-            # Find boundary post-test
-            # print('find post-test')
-            bounds[-1] = len(self.excs) - 1
+            if found_post is False:
+                bounds[-2] = bounds[-1]
 
         except IndexError:
             pass
