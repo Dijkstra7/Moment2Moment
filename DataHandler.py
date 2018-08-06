@@ -30,7 +30,18 @@ class DataHandler:
         self.ts = [0.033, 0.318, 0.158, .205]
         self.gs = [0.299, 0.043, 0.116, .112]
         self.ss = [0.099, 0.099, 0.099, .099]
+        # self.l0s = [1, 0.001, .027, 0.536]        # Same as old parameters
+        # self.ts = [1, 0.149, .059, 0.101]
+        # self.gs = [.3, 0.299, 0.250, 0.232]
+        # self.ss = [0.1, 0.1, 0.1, 0.1]
         self.fs = [0.042, 0.064, 0.028, 0.012]
+
+        self.ol0s = [1, 0.001, .027, 0.536]  # From bruteforceparameters
+        self.ots = [1, 0.149, .059, 0.101]
+        self.ogs = [.3, 0.299, 0.250, 0.232]
+        self.oss = [0.1, 0.1, 0.1, 0.1]
+
+
 
         # Retrieve the color belonging to the exercise IDS.
         self.pre_ids, self.c_in_ids, self.c_ex_ids, self.a_ex_ids, \
@@ -181,12 +192,11 @@ class DataHandler:
         if oid is not None:
             print("and for skill id {}".format(oid))
         self.set_ps_correct(oid)
-        p_jn, p_jl, p_jf, split, answers = self.m2m.get_p_js(user_id=user_id,
-                                                 method=method,
-                                             objective_id=oid)
+        p_jn, p_jl, p_jf, o_p_j, split, answers = self.m2m.get_p_js(
+            user_id=user_id, method=method, objective_id=oid)
         self.graph_length = len(p_jl)
         self.boundary_list, self.color_list = self.m2m.get_color_bars()
-        return [p_jn, p_jl, p_jf, split, answers]
+        return [p_jn, p_jl, p_jf, o_p_j, split, answers]
 
     def set_ps_correct_calc(self, oid):
          """ Method to generate the pre calculated parameters. """
@@ -216,7 +226,12 @@ class DataHandler:
         g = self.gs[position]
         s = self.ss[position]
         f = self.fs[position]
-        self.m2m.set_ps(l, t, g, s, f)
+
+        ol = self.ol0s[position]
+        ot = self.ots[position]
+        og = self.ogs[position]
+        os = self.oss[position]
+        self.m2m.set_ps(l, t, g, s, f, ol, ot, og, os)
 
     def get_color_ids(self, fname='res/ID exercises.xlsx'):
         """
@@ -254,7 +269,7 @@ class MomentByMoment:
         self.answers = corrects
         self.handler = handler
 
-    def set_ps(self, l, t, g, s, f):
+    def set_ps(self, l, t, g, s, f, ol, ot, og, os):
         """ Setter for the precalculated parameters. """
         self.p_l0 = l
         self.p_T = t
@@ -262,17 +277,11 @@ class MomentByMoment:
         self.p_S = s
         self.p_F = f
 
-    def get_p_jn(self, user_id, method='all', objective_id=None):
-        """
-        Calculate P(J_n).
-
-        Calculate by P(J_n) = P(J_l) - P(J_f).
-        :param user_id:
-        :param method:
-        :param objective_id:
-        :return:
-        """
-        return None
+        # For old graphs
+        self.p_ol0 = ol
+        self.p_oT = ot
+        self.p_oG = og
+        self.p_oS = os
 
 
     def get_p_js(self, user_id, method='all', objective_id=None):
@@ -296,14 +305,22 @@ class MomentByMoment:
         p_not_ln_t = [(1 - ln) * self.p_T for ln in p_ln]
         p_not_ln_not_t = [(1 - ln) * (1 - self.p_T) for ln in p_ln]
         p_ln_f = [ln * self.p_F for ln in p_ln]
-        p_ln_not_f = [ln* (1- self.p_F) for ln in p_ln]
+        p_ln_not_f = [ln * (1 - self.p_F) for ln in p_ln]
 
         p_jl = self.calculate_p_jl(user_answers, p_ln, p_not_ln_t,
-                                  p_not_ln_not_t)
+                                   p_not_ln_not_t)
         p_jf = self.calculate_p_jf(user_answers, p_ln_f, p_not_ln_t,
                                    p_not_ln_not_t, p_ln_not_f)
-        return [jl-jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf, split, \
-               user_answers
+
+        old_ln = self.calculate_ln(user_answers, old=True)
+        old_not_ln_t = [(1 - ln) * self.p_oT for ln in old_ln]
+        print(self.p_oT, old_not_ln_t)
+        old_not_ln_not_t = [(1 - ln) * (1 - self.p_oT) for ln in old_ln]
+        old_graph = self.calculate_p_jl(user_answers, old_ln, old_not_ln_t,
+                                        old_not_ln_not_t, old=True)
+
+        return [jl-jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf, old_graph, \
+               split, user_answers
 
     def filter_answers(self, user_id, method, objectives_id):
         """ Filter the answers on user, objective and method.
@@ -429,7 +446,7 @@ class MomentByMoment:
                 exercises_processed.append(exercise_ids[i])
         return return_answers[::-1]
 
-    def calculate_ln(self, answers):
+    def calculate_ln(self, answers, old=False):
         """
         Calculate P(L_n)
         :param answers: list of answers over which we calculate P(L_n)
@@ -439,17 +456,27 @@ class MomentByMoment:
         for answer_id in range(len(answers)):
             if len(p_ln) == 0:
                 k = self.p_l0
+                if old is True:
+                    k = self.p_ol0
             else:
                 k = p_ln[-1]
             s = self.p_S
             g = self.p_G
+            if old is True:
+                s = self.p_oS
+                g = self.p_oG
             if answers[answer_id] == 1:
                 ln_prev_given_res = (k * (1 - s)) / (
                     (k * (1 - s)) + ((1 - k) * g))
             else:
                 ln_prev_given_res = (k * s) / ((k * s) + ((1 - k) * (1 - g)))
-            p_ln.append(ln_prev_given_res +
-                        (1 - ln_prev_given_res) * self.p_T)
+            if old is False:
+                p_ln.append(ln_prev_given_res * (1.0 - self.p_F) +
+                            (1 - ln_prev_given_res) * self.p_T)
+            else:
+                p_ln.append(ln_prev_given_res +
+                            (1 - ln_prev_given_res) * self.p_oT)
+
         return p_ln
 
     def calculate_p_jf(self, answers, ln_f, n_ln_t, n_ln_n_t, ln_nf):
@@ -493,12 +520,13 @@ class MomentByMoment:
                     a_l_f =   (1-g)* t   * s    + (1-g)*(1-t)*(1-g)
                     a_nl_t =  a_l_nf
                     a_nl_nt = a_l_f
-            a12 = a_nl_t* n_ln_t[a_id] + a_nl_nt * n_ln_n_t[a_id] + \
-                  a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
+            a12 = a_nl_t * n_ln_t[a_id] + a_nl_nt * n_ln_n_t[a_id] + \
+                a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
+            # a12 = a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
             p_jf.append(a_l_f * p_ln_f / a12)
         return p_jf
 
-    def calculate_p_jl(self, answers, ln, n_ln_t, n_ln_n_t):
+    def calculate_p_jl(self, answers, ln, n_ln_t, n_ln_n_t, old=False):
         """
         Calculate P(J_l). Was previous just P(J).
 
@@ -513,27 +541,32 @@ class MomentByMoment:
         for a_id in range(len(answers) - 2):
             p_l = ln[a_id]
             p_nl_t = n_ln_t[a_id]
-            x = n_ln_n_t[a_id]
-            g = self.p_G
-            t = self.p_T
-            s = self.p_S
+            p_nl_nt = n_ln_n_t[a_id]
+            if old is True:
+                g = self.p_oG
+                t = self.p_oT
+                s = self.p_oS
+            else:
+                g = self.p_G
+                t = self.p_T
+                s = self.p_S
             if answers[a_id + 1] == 1:
                 if answers[a_id + 2] == 1:  # RR
-                    a_ln = (1 - s) ** 2
-                    a_n_ln_n_t = g * (1 - t) * g + g * t * (1 - s)
+                    a_l = (1 - s) ** 2
+                    a_nl_nt = g * (1 - t) * g + g * t * (1 - s)
                 else:  # RW
-                    a_ln = s * (1 - s)
-                    a_n_ln_n_t = g * (1 - t) * (1 - g) + g * t * s
+                    a_l = s * (1 - s)
+                    a_nl_nt = g * (1 - t) * (1 - g) + g * t * s
             else:
                 if answers[a_id + 2] == 1:  # WR
-                    a_ln = s * (1 - s)
-                    a_n_ln_n_t = g * (1 - t) * (1 - g) + (1 - g) * t * (1 - s)
+                    a_l = s * (1 - s)
+                    a_nl_nt = g * (1 - t) * (1 - g) + (1 - g) * t * (1 - s)
                 else:  # WW
-                    a_ln = s ** 2
-                    a_n_ln_n_t = (1 - g) * (1 - t) * (1 - g) + (1 - g) * t * s
-            a_n_ln_t = a_ln
-            a12 = p_l * a_ln + p_nl_t * a_n_ln_t + x * a_n_ln_n_t
-            p_jl.append(a_n_ln_t * p_nl_t / a12)
+                    a_l = s ** 2
+                    a_nl_nt = (1 - g) * (1 - t) * (1 - g) + (1 - g) * t * s
+            a_nl_t = a_l
+            a12 = p_l * a_l + p_nl_t * a_nl_t + p_nl_nt * a_nl_nt
+            p_jl.append(a_nl_t * p_nl_t / a12)
         return p_jl
 
     def get_color_bars(self):
@@ -736,7 +769,7 @@ class ParameterExtractor:
                                endpoint=False)[1:]
         return [possible_range]
 
-    def smart_ssr(self, answers, same, grain, iterations):
+    def smart_ssr_f(self, answers, same, grain, iterations):
         best_l0 = self.brute_force_params(answers, same, grain,
                                           None, 0.0, 0.0, 0.0, 0.0)[0]
         best_t = self.brute_force_params(answers, same, grain,
