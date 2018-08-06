@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from openpyxl import load_workbook
 import pickle
 
@@ -17,17 +18,19 @@ class DataHandler:
     created.
     """
     def __init__(self,
-                 fname="resultaten-radboud-all_anoniem samengevoegd_editforfirstattempts.xlsx"):
+                 fname="resultaten-radboud-all_anoniem "
+                       "samengevoegd_editforfirstattempts.xlsx",
+                 sheetname="Onlyfirstattempts"):
         # Load the workbook.
         print("loading workbook")
         self.load_student_workbook(fname)
 
         # Set pre calculated brute force parameters
-        self.l0s = [0.663, 0.648, 0.704, .864]  # From bruteforceparameters
-        self.ts = [0.367, 0.114, 0.110, .172]
-        self.gs = [0.269, 0.241, 0.124, .199]
+        self.l0s = [0.852, 0.256, 0.091, .690]  # From bruteforceparameters
+        self.ts = [0.033, 0.318, 0.158, .205]
+        self.gs = [0.299, 0.043, 0.116, .112]
         self.ss = [0.099, 0.099, 0.099, .099]
-        self.fs = [0.01, 0.029, 0.015, 0.01]
+        self.fs = [0.042, 0.064, 0.028, 0.012]
 
         # Retrieve the color belonging to the exercise IDS.
         self.pre_ids, self.c_in_ids, self.c_ex_ids, self.a_ex_ids, \
@@ -36,7 +39,7 @@ class DataHandler:
         # Initialize moment by moment class instance.
         self.m2m = MomentByMoment(self.user_ids, self.corrects, self)
 
-    def load_student_workbook(self, fname):
+    def load_student_workbook(self, fname, sheetname=None):
         """
         Loads the workbook with the student actions, if possible from pickle.
         Note: The make up of the workbook should fit in what columns are being
@@ -44,32 +47,35 @@ class DataHandler:
 
         :param fname: the path to the excel file.
         """
-        excel_file = fname
-        while fname[-1] != '.':
-            fname = fname[:-1]
-        fname = fname.split('/')[-1]+"pkl"
-        self.max_row = 16384  # self.get_max_row()
-        try:
-            print("Trying to open {}".format(fname))
-            self.dates, self.times, self.user_ids, self.learn_obj_ids, \
-            self.exercise_ids, self.corrects, self.ability_scores \
-                = pickle.load(open(fname, "rb"))
-        except FileNotFoundError:
-            print("Failed opening {}\nInstead opening {}".format(fname,
-                                                                 excel_file))
-            wb = load_workbook(excel_file)
-            self.ws = wb.active
-            self.dates = self.get_column(1)
-            self.times = self.get_column(2)
-            self.user_ids = self.get_column(4)
-            self.learn_obj_ids = self.get_column(6)
-            self.exercise_ids = self.get_column(5)
-            self.corrects = self.get_column(7)
-            self.ability_scores = self.get_column(8)
-            pickle.dump([self.dates, self.times, self.user_ids,
-                         self.learn_obj_ids, self.exercise_ids,
-                         self.corrects, self.ability_scores], open(fname,
-                                                                   "wb"))
+        if sheetname is None:
+            excel_file = fname
+            while fname[-1] != '.':
+                fname = fname[:-1]
+            fname = fname.split('/')[-1]+"pkl"
+            self.max_row = 16384  # self.get_max_row()
+            try:
+                print("Trying to open {}".format(fname))
+                self.dates, self.times, self.user_ids, self.learn_obj_ids, \
+                self.exercise_ids, self.corrects, self.ability_scores \
+                    = pickle.load(open(fname, "rb"))
+            except FileNotFoundError:
+                print("Failed opening {}\nInstead opening {}".format(fname,
+                                                                     excel_file))
+                wb = load_workbook(excel_file)
+                self.ws = wb.active
+                self.dates = self.get_column(1)
+                self.times = self.get_column(2)
+                self.user_ids = self.get_column(4)
+                self.learn_obj_ids = self.get_column(6)
+                self.exercise_ids = self.get_column(5)
+                self.corrects = self.get_column(7)
+                self.ability_scores = self.get_column(8)
+                pickle.dump([self.dates, self.times, self.user_ids,
+                             self.learn_obj_ids, self.exercise_ids,
+                             self.corrects, self.ability_scores], open(fname,
+                                                                       "wb"))
+        else:
+            return pd.read_excel(fname, sheetname)
 
     def get_max_row(self, column=1):
         """
@@ -175,15 +181,15 @@ class DataHandler:
         if oid is not None:
             print("and for skill id {}".format(oid))
         self.set_ps_correct(oid)
-        p_jn, p_jl, p_jf, split = self.m2m.get_p_js(user_id=user_id,
+        p_jn, p_jl, p_jf, split, answers = self.m2m.get_p_js(user_id=user_id,
                                                  method=method,
                                              objective_id=oid)
         self.graph_length = len(p_jl)
         self.boundary_list, self.color_list = self.m2m.get_color_bars()
-        return [p_jn, p_jl, p_jf, split]
+        return [p_jn, p_jl, p_jf, split, answers]
 
     def set_ps_correct_calc(self, oid):
-         """ Old method to generate the pre calculated parameters. """
+         """ Method to generate the pre calculated parameters. """
          loids = np.where(self.learn_obj_ids == oid)
          sames = [0]
          answers = [self.corrects[loids[0][0]]]
@@ -193,7 +199,6 @@ class DataHandler:
              else:
                  sames.append(0)
              answers.append(self.corrects[nextl])
-         print(len(sames), len(answers), len(loids))
          l, t, g, s, f = ParameterExtractor().smart_ssr(answers, sames,
                                                         1000, 10)
          self.m2m.set_ps(l, t, g, s, f)
@@ -203,7 +208,7 @@ class DataHandler:
         Set the corresponding precalculated parameters for the learning goal.
         :param oid: string representing which learning goal is used.
         """
-        loids = ['7771', '7789', '8025', '7579']  # hardcoded for this file
+        loids = ['7579', '7771', '7789', '8025']  # hardcoded for this file
         position = loids.index(str(oid))
 
         l = self.l0s[position]
@@ -287,7 +292,6 @@ class MomentByMoment:
 
         #calculate P(L_n) based on the answers.
         p_ln = self.calculate_ln(user_answers)
-
         # Calculate P(~l_n^T) and P(~L_n~T)
         p_not_ln_t = [(1 - ln) * self.p_T for ln in p_ln]
         p_not_ln_not_t = [(1 - ln) * (1 - self.p_T) for ln in p_ln]
@@ -298,7 +302,8 @@ class MomentByMoment:
                                   p_not_ln_not_t)
         p_jf = self.calculate_p_jf(user_answers, p_ln_f, p_not_ln_t,
                                    p_not_ln_not_t, p_ln_not_f)
-        return [jl-jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf, split
+        return [jl-jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf, split, \
+               user_answers
 
     def filter_answers(self, user_id, method, objectives_id):
         """ Filter the answers on user, objective and method.
@@ -341,11 +346,9 @@ class MomentByMoment:
         split = -1
         while user_abs[split+1] == 'NULL' and split<len(user_abs)-2:
             split = split+1
-            print(user_abs[split+1])
         split += 1
         if user_abs[split] == 'NULL':
             return user_answers, (None, '')
-        print(split)
         return user_answers, (split, user_abs[split])
 
     def filter_all_but_first(self, answers, exercise_ids):
@@ -445,7 +448,8 @@ class MomentByMoment:
                     (k * (1 - s)) + ((1 - k) * g))
             else:
                 ln_prev_given_res = (k * s) / ((k * s) + ((1 - k) * (1 - g)))
-            p_ln.append(ln_prev_given_res + (1 - ln_prev_given_res) * self.p_T)
+            p_ln.append(ln_prev_given_res +
+                        (1 - ln_prev_given_res) * self.p_T)
         return p_ln
 
     def calculate_p_jf(self, answers, ln_f, n_ln_t, n_ln_n_t, ln_nf):
@@ -578,7 +582,9 @@ class MomentByMoment:
             # Find class adaptive
             # print('finding class adaptive')
             while dats[0].strftime("%d") == d.strftime("%d") \
-                    and not e == self.excs[0]:
+                    and not e == self.excs[0] \
+                    and not (bounds[1] == bounds[2]
+                             and bounds[2] == bounds[3]):
                 bounds = [bounds[i] + 1 if i > 3 else bounds[i] for i in
                           range(len(bounds))]
                 excs = excs[1:]
@@ -590,18 +596,13 @@ class MomentByMoment:
             # print('finding repeated adaptive exercises')
             excs = excs[::-1]
             dats = dats[::-1]
-            bounds[-1] = len(self.excs) - 1
+            bounds[-1] = len(self.excs)
             bounds[-2] = bounds[-1]
             d = dats[0]
-            print(dats)
-            print("{} -- {}".format(d, dats[1]))
             found_post = False
             while dats[0].strftime("%d") == d.strftime("%d"):
-                print("Checking date {}, exercise is {}".format(dats[1],
-                                                                excs[0]))
                 bounds[-2] -= 1
                 if excs[0] in self.handler.post_ids:
-                    print("this is in the post-test")
                     found_post = True
                 excs = excs[1:]
                 dats = dats[1:]
@@ -619,10 +620,9 @@ class ParameterExtractor:
     Calculates the pre-calculated parameters.
 
     Has an option of brute force calculating the parameters or
-    TODO: Implement the newest value: P(F) for forgetting
     """
     def __init__(self):
-        # params = [L0, T, G, S]
+        # params = [L0, T, G, S, F]
         self.params_min = [1e-15 for i in range(4)]
         self.params_min.append(0.01)
         self.params_max = [1.0, 1.0, 0.3, 0.1, 0.3]
@@ -714,8 +714,6 @@ class ParameterExtractor:
             else:
                 L_given_answer = (L * (1.0 - S)) / (
                     (L * (1.0 - S)) + ((1.0 - L) * G))
-            if not L_given_answer:
-                print('huh')
             L = L_given_answer * (1.0 - F_) + (1.0 - L_given_answer) * T
         return SSR
 
