@@ -1,4 +1,5 @@
 import csv
+import os
 import tkinter as tk
 from tkinter import ttk
 import matplotlib
@@ -96,7 +97,9 @@ class GraphGUI(tk.Tk):
                                                                 self.objective_id)
         self.f.savefig(fname=fname)
 
-    def save_all_graphs(self, dirname='graphs_forgot_learned/'):
+    def save_all_graphs(self, dirname='graphs_simone/'):
+        if not os.path.isdir(dirname):
+            os.makedirs(dirname)
         with open(dirname+'spikes.csv', 'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
             cat = ["Spikiness", "Peaks", "Transitional peaks"]
@@ -110,7 +113,7 @@ class GraphGUI(tk.Tk):
             writer.writerow(header_row)
             errors = 0
             for user in self.handler.get_users():
-                for learn_obj in np.unique(self.handler.learn_obj_ids)[1:]:
+                for learn_obj in np.unique(self.handler.learn_obj_ids):
                     try:
                         f = matplotlib.pyplot.figure(figsize=(5, 5), dpi=100)
                         axes = matplotlib.pyplot.gca()
@@ -165,9 +168,9 @@ class GraphGUI(tk.Tk):
                         print("coordinates are {}".format(graph_n))
                         print("saved student {} objective {}".format(user,
                                                                      learn_obj))
-                        self.write_spikes(user, learn_obj,
-                                          self.handler.boundary_list,
-                                          o_graph, writer)
+                        # self.write_spikes(user, learn_obj,
+                        #                   self.handler.boundary_list,
+                        #                   o_graph, writer)
                     except Exception as e:
                         print("failed saving student {} "
                               "objective {} because of {}".format(user, learn_obj,
@@ -249,24 +252,19 @@ class GraphGUI(tk.Tk):
         return n_peaks, peak_per_bound, trans_peak
 
     def calc_spikes(self, graph, bounds):
-        print("`2 {}".format(sum(graph)/len(graph)))
         gen_sp = max(graph)/(sum(graph)/len(graph))
         lst_sp = []
-        print('`2.5')
         for b1, b2 in zip(bounds[:-1], bounds[1:]):
             part = graph[b1:b2]
             if len(part)==0 or sum(part)==0:
                 lst_sp.append("NaN")
             else:
                 lst_sp.append(max(part)/(sum(part)/len(part)))
-        print("~3")
         return gen_sp, lst_sp
 
 
 class StartPage(tk.Frame):
     """ First page that is shown
-
-	TODO - Change to real start page
 	"""
 
     def __init__(self, parent, controller: GraphGUI):

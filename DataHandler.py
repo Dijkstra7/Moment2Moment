@@ -18,8 +18,7 @@ class DataHandler:
     created.
     """
     def __init__(self,
-                 fname="resultaten-radboud-all_anoniem "
-                       "samengevoegd_editforfirstattempts.xlsx",
+                 fname="Stringfile_dataSimone.xlsx",
                  sheetname="Onlyfirstattempts"):
         # Load the workbook.
         print("loading workbook")
@@ -30,18 +29,17 @@ class DataHandler:
         self.ts = [0.033, 0.318, 0.158, .205]
         self.gs = [0.299, 0.043, 0.116, .112]
         self.ss = [0.099, 0.099, 0.099, .099]
-        # self.l0s = [1, 0.001, .027, 0.536]        # Same as old parameters
-        # self.ts = [1, 0.149, .059, 0.101]
-        # self.gs = [.3, 0.299, 0.250, 0.232]
-        # self.ss = [0.1, 0.1, 0.1, 0.1]
         self.fs = [0.042, 0.064, 0.028, 0.012]
 
-        self.ol0s = [1, 0.001, .027, 0.536]  # From bruteforceparameters
-        self.ots = [1, 0.149, .059, 0.101]
-        self.ogs = [.3, 0.299, 0.250, 0.232]
-        self.oss = [0.1, 0.1, 0.1, 0.1]
+        self.ol0s = [.397,   .642,   .919]      # For simone data
+        self.ots = [.095,   .144,   .184]
+        self.ogs = [.3,     .117,   .001]
+        self.oss = [.1,     .1,     .077]
 
-
+        # self.ol0s = [1, 0.001, .027, 0.536]  # From bruteforceparameters
+        # self.ots = [1, 0.149, .059, 0.101]
+        # self.ogs = [.3, 0.299, 0.250, 0.232]
+        # self.oss = [0.1, 0.1, 0.1, 0.1]
 
         # Retrieve the color belonging to the exercise IDS.
         self.pre_ids, self.c_in_ids, self.c_ex_ids, self.a_ex_ids, \
@@ -63,7 +61,7 @@ class DataHandler:
             while fname[-1] != '.':
                 fname = fname[:-1]
             fname = fname.split('/')[-1]+"pkl"
-            self.max_row = 16384  # self.get_max_row()
+            self.max_row = 8088  # self.get_max_row()
             try:
                 print("Trying to open {}".format(fname))
                 self.dates, self.times, self.user_ids, self.learn_obj_ids, \
@@ -74,13 +72,13 @@ class DataHandler:
                                                                      excel_file))
                 wb = load_workbook(excel_file)
                 self.ws = wb.active
-                self.dates = self.get_column(1)
-                self.times = self.get_column(2)
-                self.user_ids = self.get_column(4)
-                self.learn_obj_ids = self.get_column(6)
+                self.dates = None #self.get_column(1)
+                self.times = None #self.get_column(2)
+                self.user_ids = self.get_column(3)
+                self.learn_obj_ids = self.get_column(4)
                 self.exercise_ids = self.get_column(5)
-                self.corrects = self.get_column(7)
-                self.ability_scores = self.get_column(8)
+                self.corrects = self.get_column(6)
+                self.ability_scores = None #self.get_column(8)
                 pickle.dump([self.dates, self.times, self.user_ids,
                              self.learn_obj_ids, self.exercise_ids,
                              self.corrects, self.ability_scores], open(fname,
@@ -199,27 +197,33 @@ class DataHandler:
         return [p_jn, p_jl, p_jf, o_p_j, split, answers]
 
     def set_ps_correct_calc(self, oid):
-         """ Method to generate the pre calculated parameters. """
-         loids = np.where(self.learn_obj_ids == oid)
-         sames = [0]
-         answers = [self.corrects[loids[0][0]]]
-         for l, nextl in zip(loids[0][:-1], loids[0][1:]):
-             if self.user_ids[l] == self.user_ids[nextl]:
-                 sames.append(1)
-             else:
-                 sames.append(0)
-             answers.append(self.corrects[nextl])
-         l, t, g, s, f = ParameterExtractor().smart_ssr(answers, sames,
-                                                        1000, 10)
-         self.m2m.set_ps(l, t, g, s, f)
+        """ Method to generate the pre calculated parameters. """
+        loids = np.where(self.learn_obj_ids == oid)
+        sames = [0]
+        answers = [self.corrects[loids[0][0]]]
+        for l, nextl in zip(loids[0][:-1], loids[0][1:]):
+            if self.user_ids[l] == self.user_ids[nextl]:
+                sames.append(1)
+            else:
+                sames.append(0)
+            answers.append(self.corrects[nextl])
+        f = 0
+        ol, ot, og, os = ParameterExtractor().smart_ssr(answers, sames,
+                                                      1000, 10) #old params
+        l, t, g, s, f = [0, 0, 0, 0, 0]#\
+            # ParameterExtractor_with_forget().smart_ssr_f(answers,
+            #                                                          sames,
+            #                                                          1000,
+            #                                                          10)
+        self.m2m.set_ps(l, t, g, s, f, ol, ot, og, os)
 
     def set_ps_correct(self, oid):
         """
         Set the corresponding precalculated parameters for the learning goal.
         :param oid: string representing which learning goal is used.
         """
-        loids = ['7579', '7771', '7789', '8025']  # hardcoded for this file
-        position = loids.index(str(oid))
+        loids = ['7771', '7789', '8025', '7579']  # hardcoded for this file
+        position = loids.index(str(oid).replace("a", ""))
 
         l = self.l0s[position]
         t = self.ts[position]
@@ -265,9 +269,20 @@ class MomentByMoment:
         self.p_F = .08
         self.p_ln = []
         self.user_ids = user_ids
-        self.users = np.unique(user_ids)
+        try:
+            self.users = np.unique(user_ids)
+        except TypeError:
+            self.users = self.unique(user_ids)
         self.answers = corrects
         self.handler = handler
+
+    def unique(self, lst):
+        new_lst = []
+        for item in lst:
+            print(item)
+            if str(item) not in new_lst:
+                new_lst.append(str(item))
+        return np.array(new_lst)
 
     def set_ps(self, l, t, g, s, f, ol, ot, og, os):
         """ Setter for the precalculated parameters. """
@@ -341,8 +356,8 @@ class MomentByMoment:
         user_objectives = self.handler.learn_obj_ids[self.chosen_ids]
         user_ids = self.user_ids[self.chosen_ids]
         user_excs = self.handler.exercise_ids[self.chosen_ids]
-        user_dates = self.handler.dates[self.chosen_ids]
-        user_abs = self.handler.ability_scores[self.chosen_ids]
+        # user_dates = self.handler.dates[self.chosen_ids]
+        # user_abs = self.handler.ability_scores[self.chosen_ids]
 
         # Filter the data according to method.
         if method not in ['all', 'first', 'second', 'all but first', 'last']:
@@ -358,7 +373,8 @@ class MomentByMoment:
 
         # Store the exercises.
         self.excs = user_excs
-        self.dats = user_dates
+        # self.dats = user_dates
+        return user_answers, (None, '')  # For simone data
 
         split = -1
         while user_abs[split+1] == 'NULL' and split<len(user_abs)-2:
@@ -570,13 +586,14 @@ class MomentByMoment:
         return p_jl
 
     def get_color_bars(self):
-        # TODO: Update logic here
-        excs = self.excs
-        dats = self.dats
+        # Gets the color corresponding to the boundaries. TODO: Update comment
         bounds = [0, 0, 0, 0, 0, 0, 0]
         colors = ['royalblue', 'darkorange', 'silver', 'gold', 'mediumblue',
                   'olivedrab']
 
+        return bounds, colors  # For simone data
+        excs = self.excs
+        dats = self.dats
         # find pre bound
         # print('finding pre-test')
 
@@ -649,6 +666,142 @@ class MomentByMoment:
 
 
 class ParameterExtractor:
+    """
+    Calculates the pre-calculated parameters.
+
+    Has an option of brute force calculating the parameters or
+    """
+    def __init__(self):
+        # params = [L0, T, G, S, F]
+        self.params_min = [1e-15 for i in range(4)]
+        self.params_max = [1.0, 1.0, 0.3, 0.1]
+
+    def brute_force_params(self, answers, same, grain=100, L0_fix=None,
+                           T_fix=None, G_fix=None, S_fix=None):
+        """
+        Check for every parameter what the best value is.
+
+        if x_fix is None then the whole range will be tested.
+        :param answers: the answers given by the students
+        :param same: Whether the answers are switching to a new student.
+        :param grain: integer defining the amount of values being checked
+        :param L0_fix: integer; value of L0. if None, this will return best L0
+        :param T_fix: integer; value of T. if None, this will return best T
+        :param G_fix: integer; value of G. if None, this will return best G
+        :param S_fix: integer; value of S. if None, this will return best S
+
+        :return: values for L0, T, G and S that result in the lowest SSR.
+        """
+        # set ranges up
+        best_l0 = L0_fix
+        best_t = T_fix
+        best_g = G_fix
+        best_s = S_fix
+        best_SSR = len(answers) * 999999999999991
+        L0_range = self.get_range(L0_fix, 0, grain)
+        T_range = self.get_range(T_fix, 1, grain)
+        G_range = self.get_range(G_fix, 2, grain)
+        S_range = self.get_range(S_fix, 3, grain)
+
+        # Find best values
+        for L0 in L0_range:
+            # print('------------------------------------\nL0 is now at:{}'.format(L0))
+            for T in T_range:
+                for G in G_range:
+                    for S in S_range:
+                        # Get SSR for values
+                        new_SSR = self.get_s_s_r(L0, T, G, S, answers,
+                                                 same)
+
+                        # check whether new value improves old values
+                        if new_SSR <= best_SSR:
+                            best_l0, best_t, best_g, best_s, \
+                                best_SSR = [L0, T, G, S, new_SSR]
+                            # print('best parameters now at L0:{}, ' +
+                            #    'T:{}, G:{}, S:{}'.format(L0,
+                            # 	 T, G, S))
+        return best_l0, best_t, best_g, best_s
+
+    def get_s_s_r(self, L0, T, G, S, answers, sames=None):
+        """
+        Calculate the Sum Squared Residu.
+
+        This is a method that defines the fit of the parameters.
+        :param L0: integer; value of L0
+        :param T: integer; value of T
+        :param G: integer; value of G
+        :param S: integer; value of S
+        :param answers: list of answers given by students
+        :param sames: list of whether the answer is given by the same student.
+        :return: float; Summed squared residu
+        """
+        SSR = 0.0
+        S = max(1E-15, S)
+        T = max(1E-15, T)
+        G = max(1E-15, G)
+        L0 = max(1E-15, L0)
+        L = L0
+        # Make sure that there is a list with sames.
+        if sames is None:
+            sames = np.ones(answers.size)
+            sames[0] = 1
+
+        # for every answer update the SSR.
+        for same, answer in zip(sames, answers):
+            if same == 0:  # New student so reset to initial chance of learning
+                L = L0
+            # print(L, T, G, S, F)
+            SSR += (answer - (L * (1.0 - S) + (1.0 - L) * G)) ** 2
+            if answer == 0:
+                L_given_answer = (L * S) / ((L * S) + ((1.0 - L) * (1.0 - G)))
+            else:
+                L_given_answer = (L * (1.0 - S)) / (
+                    (L * (1.0 - S)) + ((1.0 - L) * G))
+            L = L_given_answer + (1.0 - L_given_answer) * T
+        return SSR
+
+    def get_range(self, possible_range, par_id, grain):
+        """
+        helperfunction to get the range for a parameter based on the grain.
+
+        returns either a list of the whole possible values if that value is
+        not set (possible_range=None) else it returns a list containing only
+        once the value of the set value.
+        :param possible_range: Either float with the preset value or None
+        :param par_id: the id of the parameter to find the boundaries for it.
+        :param grain: integer, how finegrained the range must be.
+        :return:
+        """
+        if possible_range is None:
+            return np.linspace(self.params_min[par_id],
+                               self.params_max[par_id],
+                               int(grain * self.params_max[par_id]),
+                               endpoint=False)[1:]
+        return [possible_range]
+
+    def smart_ssr(self, answers, same, grain, iterations):
+        best_l0 = self.brute_force_params(answers, same, grain,
+                                          None, 0.0, 0.0, 0.0)[0]
+        best_t = self.brute_force_params(answers, same, grain,
+                                         0.0, None, 0.0, 0.0)[1]
+        best_g = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, None, 0.0)[2]
+        best_s = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, 0.0, None)[3]
+        for i in range(iterations):
+            print("best is {}".format([best_l0, best_t, best_g, best_s]))
+            best_l0 = self.brute_force_params(answers, same, grain, None,
+                                              best_t, best_g, best_s)[0]
+            best_t = self.brute_force_params(answers, same, grain, best_l0,
+                                             None, best_g, best_s)[1]
+            best_g = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, None, best_s)[2]
+            best_s = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, best_g, None)[3]
+        return best_l0, best_t, best_g, best_s
+
+
+class ParameterExtractor_with_forget:
     """
     Calculates the pre-calculated parameters.
 
@@ -797,15 +950,10 @@ class ParameterExtractor:
         return best_l0, best_t, best_g, best_s, best_f
 
 
-
-
-
-
-
 if __name__ == "__main__":  # TESTING
     ex = ParameterExtractor()
     dh = DataHandler()
-    for loid in np.unique(dh.learn_obj_ids[1:]):
+    for loid in np.unique(dh.learn_obj_ids):
         print("getting parameters for goal {}".format(loid))
         dh.set_ps_correct_calc(loid)
         print("Best parameters are {}".format([dh.m2m.p_l0, dh.m2m.p_T,
