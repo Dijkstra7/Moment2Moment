@@ -167,7 +167,7 @@ class DataHandler:
     #     if method == 'all':
     #         return self.corrects[np.where(self.user_ids == user_id)]
 
-    def get_graph_variables(self, user_id=0, method='all', oid=None):
+    def get_graph_variables(self, user_id=0, method='all', oid=None, depth=2):
         """
         Generates the variables that will be shown in the graph.
 
@@ -190,6 +190,7 @@ class DataHandler:
         if oid is not None:
             print("and for skill id {}".format(oid))
         self.set_ps_correct(oid)
+        self.m2m.rec_depth = depth
         p_jn, p_jl, p_jf, o_p_j, split, answers = self.m2m.get_p_js(
             user_id=user_id, method=method, objective_id=oid)
         self.graph_length = len(p_jl)
@@ -275,6 +276,7 @@ class MomentByMoment:
             self.users = self.unique(user_ids)
         self.answers = corrects
         self.handler = handler
+        self.rec_depth = 3
 
     def unique(self, lst):
         new_lst = []
@@ -316,7 +318,8 @@ class MomentByMoment:
 
         #calculate P(L_n) based on the answers.
         p_ln = self.calculate_ln(user_answers)
-        p_fn = self.calculate_fn(user_answers, p_ln)
+        p_fn = [self.p_F for a in user_answers]
+        # p_fn = self.calculate_fn(user_answers, p_ln)
         # Calculate P(~l_n^T) and P(~L_n~T)
         p_not_ln_t = [(1 - ln) * self.p_T for ln in p_ln]
         p_not_ln_not_t = [(1 - ln) * (1 - self.p_T) for ln in p_ln]
@@ -324,9 +327,9 @@ class MomentByMoment:
         p_ln_not_f = [ln * (1 - fn) for ln, fn in zip(p_ln, p_fn)]
 
         p_jl = self.calculate_p_jl(user_answers, p_ln, p_not_ln_t,
-                                   p_not_ln_not_t)
-        p_jf = self.calculate_p_jf(user_answers, p_ln_f, p_not_ln_t,
                                    p_not_ln_not_t, p_ln_not_f)
+        p_jf, _ = self.calculate_p_jf(user_answers, p_ln_f, p_not_ln_t,
+                                            p_not_ln_not_t, p_ln_not_f)
 
         old_ln = self.calculate_ln(user_answers, old=True)
         old_not_ln_t = [(1 - ln) * self.p_oT for ln in old_ln]
@@ -337,6 +340,189 @@ class MomentByMoment:
 
         return [jl-jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf, old_graph, \
                split, user_answers
+
+    def calculate_fn(self, answers, p_ln):
+        p_fn = []
+        for answer_id in range(len(answers)):
+            if len(p_fn) == 0:
+                k = self.p_F
+            else:
+                k = p_fn[-1]
+            s = self.p_S
+            g = self.p_G
+            t = self.p_T
+            l = p_ln[answer_id]
+            if answers[answer_id] == 0:
+                fn_prev_given_res = (k * (1 - g)) / (k * (1 - g) + ((1 - k) * s))
+            else:
+                fn_prev_given_res = (k * g) / ((k * g) + ((1-k) * (1 - s)))
+            p_fn.append(fn_prev_given_res * (1-t) +
+                        (1 - fn_prev_given_res) * t)
+        return p_fn
+
+    def calculate_ln(self, answers, old=False):
+        """
+        Calculate P(L_n)
+        :param answers: list of answers over which we calculate P(L_n)
+        :return: a list of values of P(L_n)
+        """
+        p_ln = []
+        for answer_id in range(len(answers)):
+            if len(p_ln) == 0:
+                k = self.p_l0
+                if old is True:
+                    k = self.p_ol0
+            else:
+                k = p_ln[-1]
+            s = self.p_S
+            g = self.p_G
+            if old is True:
+                s = self.p_oS
+                g = self.p_oG
+            if answers[answer_id] == 1:
+                ln_prev_given_res = (k * (1 - s)) / (
+                    (k * (1 - s)) + ((1 - k) * g))
+            else:
+                if old is True:
+                    ln_prev_given_res = (k * s) / ((k * s) + ((1 - k) * (1 - g)))
+                else:
+                    ln_prev_given_res = (k * s) / ((k * s) + ((1-k)
+                                                               * (1 - g)))
+            if old is False:
+                p_ln.append(ln_prev_given_res * (1 - self.p_F) +
+                            (1 - ln_prev_given_res) * self.p_T)
+            else:
+                p_ln.append(ln_prev_given_res +
+                            (1 - ln_prev_given_res) * self.p_oT)
+
+        return p_ln
+
+    def calculate_p_jf(self, answers, ln_f, n_ln_t, n_ln_n_t, ln_nf):
+        """
+        Calculates P(J_f). Based upon the precalculated changes P(L_n^F),
+        P(~L_n^T), P(~L_n^~T) and P(L_n^~F)
+
+        :param answers:
+        :param ln_f:
+        :param n_ln_t:
+        :param n_ln_n_t:
+        :param ln_nf:
+        :return:
+        """
+        p_jf = []
+        measure=[]
+        for a_id in range(len(answers) - 2):
+            p_ln_f = ln_f[a_id]
+            g = self.p_G
+            t = self.p_T
+            s = self.p_S
+            f = self.p_F
+            next_answers = answers[a_id:a_id + self.rec_depth]
+            a_l_nf = self.calc_a_rec(next_answers, t, f, g, s, 1)
+            a_l_f = self.calc_a_rec(next_answers, t, f, g, s, 0)
+            a_nl_t =  a_l_nf
+            a_nl_nt = a_l_f
+            a12 = a_nl_t * n_ln_t[a_id] + a_nl_nt * n_ln_n_t[a_id] + \
+                a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
+            # a12 = a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f + a_nl_nt * n_ln_n_t[a_id]
+            p_jf.append(a_l_f * p_ln_f / a12)
+            measure.append(a_l_f)
+        return p_jf, measure
+
+    def calculate_p_jl(self, answers, ln, n_ln_t, n_ln_n_t, ln_f=None, old=False):
+        """
+        Calculate P(J_l). Was previous just P(J).
+
+        :param answers:     Whether student answered correct.
+        :param ln:          precalculated P(L_n)
+        :param n_ln_t:      precalculated P(~L_n^T)
+        :param n_ln_n_t:    precalculated P(~L_n^T)
+        :return:            List of P(J_l) for every answer except the last
+                            two.
+        """
+        p_jl = []
+        for a_id in range(len(answers) - 2):
+            p_l = ln[a_id]
+            p_nl_t = n_ln_t[a_id]
+            p_nl_nt = n_ln_n_t[a_id]
+            if old is True:
+                g = self.p_oG
+                t = self.p_oT
+                s = self.p_oS
+            else:
+                g = self.p_G
+                t = self.p_T
+                s = self.p_S
+                f = self.p_F
+                p_l_f = ln_f[a_id]
+            if old is True:
+                rd = self.rec_depth
+                a_l = self.calc_a_rec_old(answers[a_id:a_id + rd], t, g, s, 1)
+                a_nl_nt = self.calc_a_rec_old(answers[a_id:a_id + rd], t, g, s, 0)
+            else:
+                rd = self.rec_depth
+                a_l = self.calc_a_rec(answers[a_id:a_id+rd], t, f, g, s, 1)
+                a_nl_nt = self.calc_a_rec(answers[a_id:a_id+rd], t, f, g, s, 0)
+            a_nl_t = a_l
+            a_l_f = a_nl_nt
+            a12 = p_l * a_l + p_nl_t * a_nl_t + p_nl_nt * a_nl_nt
+            if old is False:
+                a12 += p_l_f * a_l_f
+            p_jl.append(a_nl_t * p_nl_t / a12)
+        return p_jl
+
+    def calc_a_rec(self, rest_answers, t, f, g, s, prev_state):
+        if len(rest_answers)==1:
+            if prev_state == 1:
+                if rest_answers[0] == 1:
+                    return (1 - s)
+                else:
+                    return s
+            else:
+                if rest_answers[0] == 1:
+                    return g
+                else:
+                    return (1 - g)
+        if prev_state==1:
+            trans = self.calc_a_rec(rest_answers[1:], t, f, g, s, 0)
+            ntrans = self.calc_a_rec(rest_answers[1:], t, f, g, s, 1)
+            if rest_answers[0]==1:
+                return f * (1-s) * trans + (1-f) * (1-s) * ntrans
+            else:
+                return f * s * trans + (1 - f) * s * ntrans
+        else:
+            trans = self.calc_a_rec(rest_answers[1:], t, f, g, s, 1)
+            ntrans = self.calc_a_rec(rest_answers[1:], t, f, g, s, 0)
+            if rest_answers[0]==1:
+                return t * g * trans + (1-t) * g * ntrans
+            else:
+                return t * (1-g) * trans + (1 - t) * (1-g) * ntrans
+
+    def calc_a_rec_old(self, rest_answers, t, g, s, prev_state):
+        if len(rest_answers)==1:
+            if prev_state == 1:
+                if rest_answers[0] == 1:
+                    return (1 - s)
+                else:
+                    return s
+            else:
+                if rest_answers[0] == 1:
+                    return g
+                else:
+                    return (1 - g)
+        if prev_state==1:
+            ntrans = self.calc_a_rec_old(rest_answers[1:], t, g, s, 1)
+            if rest_answers[0]==1:
+                return (1-s) * ntrans
+            else:
+                return s * ntrans
+        else:
+            trans = self.calc_a_rec_old(rest_answers[1:], t, g, s, 1)
+            ntrans = self.calc_a_rec_old(rest_answers[1:], t, g, s, 0)
+            if rest_answers[0]==1:
+                return t * g * trans + (1-t) * g * ntrans
+            else:
+                return t * (1-g) * trans + (1 - t) * (1-g) * ntrans
 
     def filter_answers(self, user_id, method, objectives_id):
         """ Filter the answers on user, objective and method.
@@ -462,152 +648,6 @@ class MomentByMoment:
                 return_answers.append(answers[i])
                 exercises_processed.append(exercise_ids[i])
         return return_answers[::-1]
-
-    def calculate_fn(self, answers, p_ln):
-        p_fn = []
-        for answer_id in range(len(answers)):
-            if len(p_fn) == 0:
-                k = self.p_F
-            else:
-                k = p_fn[-1]
-            s = self.p_S
-            g = self.p_G
-            l = p_ln[answer_id]
-            if answers[answer_id] == 0:
-                fn_prev_given_res = (k) / (
-                    (k) + ((1 - k) * s))
-            else:
-                fn_prev_given_res = (k * g) / ((k * g) + ((1-k) * (1 - s)))
-            p_fn.append(fn_prev_given_res  +
-                        (1 - fn_prev_given_res)*l)
-        return p_fn
-
-    def calculate_ln(self, answers, old=False):
-        """
-        Calculate P(L_n)
-        :param answers: list of answers over which we calculate P(L_n)
-        :return: a list of values of P(L_n)
-        """
-        p_ln = []
-        for answer_id in range(len(answers)):
-            if len(p_ln) == 0:
-                k = self.p_l0
-                if old is True:
-                    k = self.p_ol0
-            else:
-                k = p_ln[-1]
-            s = self.p_S
-            g = self.p_G
-            if old is True:
-                s = self.p_oS
-                g = self.p_oG
-            if answers[answer_id] == 1:
-                ln_prev_given_res = (k * (1 - s)) / (
-                    (k * (1 - s)) + ((1 - k) * g))
-            else:
-                if old is True:
-                    ln_prev_given_res = (k * s) / ((k * s) + ((1 - k) * (1 - g)))
-                else:
-                    ln_prev_given_res = (k * s * self.p_F) / ((k * s) + ((1-k)
-                                                               * (1 - g)))
-            if old is False:
-                p_ln.append(ln_prev_given_res +
-                            (1 - ln_prev_given_res) * self.p_T)
-            else:
-                p_ln.append(ln_prev_given_res +
-                            (1 - ln_prev_given_res) * self.p_oT)
-
-        return p_ln
-
-    def calculate_p_jf(self, answers, ln_f, n_ln_t, n_ln_n_t, ln_nf):
-        """
-        Calculates P(J_f). Based upon the precalculated changes P(L_n^F),
-        P(~L_n^T), P(~L_n^~T) and P(L_n^~F)
-
-        :param answers:
-        :param ln_f:
-        :param n_ln_t:
-        :param n_ln_n_t:
-        :param ln_nf:
-        :return:
-        """
-        p_jf = []
-        for a_id in range(len(answers) - 2):
-            p_ln_f = ln_f[a_id]
-            g = self.p_G
-            t = self.p_T
-            s = self.p_S
-            f = self.p_F
-            if answers[a_id + 1] == 1:
-                if answers[a_id + 2] == 1:                      # C C
-                    a_l_nf =  (1-s)*(1-f)*(1-s) + (1-s)* f   * g
-                    a_l_f =   g    * t   *(1-s) + g    *(1-t)* g
-                    a_nl_t =  a_l_nf
-                    a_nl_nt = a_l_f
-                else:                                           # C ~C
-                    a_l_nf =  (1-s)*(1-f)* s    + (1-s)* f   *(1-g)
-                    a_l_f =   g    * t   * s    + g    *(1-t)*(1-g)
-                    a_nl_t =  a_l_nf
-                    a_nl_nt = a_l_f
-            else:
-                if answers[a_id + 2] == 1:                      # ~C C
-                    a_l_nf =  s    *(1-f)*(1-s) + s    * f   * g
-                    a_l_f =   (1-g)* t   *(1-s) + (1-g)*(1-t)* g
-                    a_nl_t =  a_l_nf
-                    a_nl_nt = a_l_f
-                else:                                           # ~C ~C
-                    a_l_nf =  s    *(1-f)* s    + s    * f   *(1-g)
-                    a_l_f =   (1-g)* t   * s    + (1-g)*(1-t)*(1-g)
-                    a_nl_t =  a_l_nf
-                    a_nl_nt = a_l_f
-            a12 = a_nl_t * n_ln_t[a_id] + a_nl_nt * n_ln_n_t[a_id] + \
-                a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
-            # a12 = a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
-            p_jf.append(a_l_f * p_ln_f / a12)
-        return p_jf
-
-    def calculate_p_jl(self, answers, ln, n_ln_t, n_ln_n_t, old=False):
-        """
-        Calculate P(J_l). Was previous just P(J).
-
-        :param answers:     Whether student answered correct.
-        :param ln:          precalculated P(L_n)
-        :param n_ln_t:      precalculated P(~L_n^T)
-        :param n_ln_n_t:    precalculated P(~L_n^T)
-        :return:            List of P(J_l) for every answer except the last
-                            two.
-        """
-        p_jl = []
-        for a_id in range(len(answers) - 2):
-            p_l = ln[a_id]
-            p_nl_t = n_ln_t[a_id]
-            p_nl_nt = n_ln_n_t[a_id]
-            if old is True:
-                g = self.p_oG
-                t = self.p_oT
-                s = self.p_oS
-            else:
-                g = self.p_G
-                t = self.p_T
-                s = self.p_S
-            if answers[a_id + 1] == 1:
-                if answers[a_id + 2] == 1:  # RR
-                    a_l = (1 - s) ** 2
-                    a_nl_nt = g * (1 - t) * g + g * t * (1 - s)
-                else:  # RW
-                    a_l = s * (1 - s)
-                    a_nl_nt = g * (1 - t) * (1 - g) + g * t * s
-            else:
-                if answers[a_id + 2] == 1:  # WR
-                    a_l = s * (1 - s)
-                    a_nl_nt = g * (1 - t) * (1 - g) + (1 - g) * t * (1 - s)
-                else:  # WW
-                    a_l = s ** 2
-                    a_nl_nt = (1 - g) * (1 - t) * (1 - g) + (1 - g) * t * s
-            a_nl_t = a_l
-            a12 = p_l * a_l + p_nl_t * a_nl_t + p_nl_nt * a_nl_nt
-            p_jl.append(a_nl_t * p_nl_t / a12)
-        return p_jl
 
     def get_color_bars(self):
         # Gets the color corresponding to the boundaries. TODO: Update comment
