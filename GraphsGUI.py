@@ -168,9 +168,9 @@ class GraphGUI(tk.Tk):
                         print("coordinates are {}".format(graph_n))
                         print("saved student {} objective {}".format(user,
                                                                      learn_obj))
-                        # self.write_spikes(user, learn_obj,
-                        #                   self.handler.boundary_list,
-                        #                   o_graph, writer)
+                        self.write_spikes(user, learn_obj,
+                                          self.handler.boundary_list,
+                                          o_graph, writer)
                     except Exception as e:
                         print("failed saving student {} "
                               "objective {} because of {}".format(user, learn_obj,
@@ -181,7 +181,6 @@ class GraphGUI(tk.Tk):
     def write_spikes(self, student, loid, bounds, graph, writer):
         row = [str(student), str(loid)]
         n_peaks, peak_per_bound, trans_peak = self.calc_peaks(graph, bounds)
-        print("`1")
         gen_spikiness, spikiness_per_bound = self.calc_spikes(graph, bounds)
         # Spikiness
         row.append(gen_spikiness)
