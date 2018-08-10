@@ -1,438 +1,959 @@
-import csv
-import os
-import tkinter as tk
-from tkinter import ttk
-import matplotlib
-import matplotlib.animation as animation
-import matplotlib.pyplot as plt
 import numpy as np
-
-matplotlib.use("TkAgg")
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
-import DataHandler
-
-LARGE_FONT = ("Verdana", 12)
+import pandas as pd
+from openpyxl import load_workbook
+import pickle
 
 
-class GraphGUI(tk.Tk):
-    def __init__(self, *args, **kwargs):
-        tk.Tk.__init__(self, *args, **kwargs)
-        tk.Tk.iconbitmap(self, default='./res/m2micon.ico')
-        tk.Tk.wm_title(self, "Moment to moment graph generator")
-        container = tk.Frame()
-        container.pack(side='top', fill='both', expand=True)
-        container.grid_rowconfigure(0, weight=1)
-        container.grid_columnconfigure(0, weight=1)
-        self.handler = DataHandler.DataHandler()
-        self.setup_graph()
-        self.frames = {}
-        self.user_id = self.handler.user_ids[0]
-        self.objective_id = self.handler.learn_obj_ids[0]
-        for F in (StartPage, GraphPage):
-            new_frame = F(container, self)
-            self.frames[F] = new_frame
-            new_frame.grid(row=0, column=0, sticky='nsew')
-        self.show_frame(GraphPage)
-        self.method = 'all'
+class DataHandler:
+    """
+    Extract data from an excel file containing student activities.
 
-    def show_frame(self, cont):
-        frame = self.frames[cont]
-        frame.tkraise()
+    This class opens a file containing the data from multiple students on how
+    they performed on the Snappet app. It extracts the user ID's, learning
+    objective ID's, exercise ID's, date and time and correctness of a
+    students answer on an exercise. It tracks what kind of exercise each
+    particular exercise is.
 
-    def update_graph(self, huh=None):
-        # cmap = plt.get_cmap('cool')
-        graph_n, graph_l, graph_f, o_graph, split, answers = \
-            self.handler.get_graph_variables(
-            self.user_id, method=self.method, oid=self.objective_id)
-        t_list = self.handler.get_graph_variables(self.user_id,
-                                                        method=self.method,
-                                                        oid=self.objective_id)
-        self.a.clear()
-        self.a.plot(range(len(graph_n)), graph_n, label="P(Jn)")
-        # self.a.plot(range(len(graph_n)), graph_l, label="P(Jl)")
-        self.a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
-        self.a.plot(range(len(answers)), answers, label="Answers")
-        height = max(max(graph_n), max(graph_l), max(graph_f))
-        low = min(min(graph_n), min(graph_l), min(graph_f))
-        self.a.legend()
-        self.a.plot([split[0], split[0]], [low, height], color="black")
-        self.a.text(split[0], height, str(split[1]),
-                    horizontalalignment='center',
-                    verticalalignment='center', bbox=dict(facecolor='white',
-                                                          edgecolor='white',
-                                                          alpha=1.0))
-        boundary_list = self.handler.boundary_list[:]
-        color_list = self.handler.color_list[:len(boundary_list) - 1]
-        for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
-                             color_list):
-            self.a.broken_barh([(b1, b2 - b1)],
-                               (low + .15 * (height-low), height - .15 * (
-                                       height-low)),
-                               facecolors=c)
-        print(o_graph)
+    Additionally an instance of the moment by moment calculator class is
+    created.
+    """
+    def __init__(self,
+                 fname="Data Simone.xlsx",
+                 sheetname="Onlyfirstattempts"):
+        # Load the workbook.
+        print("loading workbook")
+        self.load_student_workbook(fname)
 
-    def setup_graph(self):
-        self.f = Figure(figsize=(5, 5), dpi=100)
-        self.a = self.f.add_subplot(111)
-        self.a.plot([1, 1], [1, 0])
+        # Set pre calculated brute force parameters
+        self.l0s = [0.852, 0.256, 0.091, .690]  # From bruteforceparameters
+        self.ts = [0.033, 0.318, 0.158, .205]
+        self.gs = [0.299, 0.043, 0.116, .112]
+        self.ss = [0.099, 0.099, 0.099, .099]
+        self.fs = [0.042, 0.064, 0.028, 0.012]
 
-    def upd_user(self, user_id):
-        self.user_id = user_id
-        self.update_graph(0)
+        self.ol0s = [.397,   .642,   .919]      # For simone data
+        self.ots = [.095,   .144,   .184]
+        self.ogs = [.3,     .117,   .001]
+        self.oss = [.1,     .1,     .077]
 
-    def upd_learn_goal(self, l_o_id):
-        self.objective_id = l_o_id
-        self.update_graph(0)
+        # self.ol0s = [1, 0.001, .027, 0.536]  # From bruteforceparameters
+        # self.ots = [1, 0.149, .059, 0.101]
+        # self.ogs = [.3, 0.299, 0.250, 0.232]
+        # self.oss = [0.1, 0.1, 0.1, 0.1]
 
-    def move_user(self, incr):
-        idx = self.handler.get_users().tolist().index(self.user_id) + incr
-        self.user_id = self.handler.get_users()[
-            idx % len(self.handler.get_users())]
-        return self.user_id
+        # Retrieve the color belonging to the exercise IDS.
+        self.pre_ids, self.c_in_ids, self.c_ex_ids, self.a_ex_ids, \
+            self.ra_ex_ids, self.post_ids = self.get_color_ids()
 
-    def save_graph(self, fname=None):
-        if fname is None:
-            fname = 'graphs/student {} objective {}.png'.format(self.user_id,
-                                                                self.objective_id)
-        self.f.savefig(fname=fname)
+        # Initialize moment by moment class instance.
+        self.m2m = MomentByMoment(self.user_ids, self.corrects, self)
 
-    def save_all_graphs(self, dirname='graphs_simone/'):
-        if not os.path.isdir(dirname):
-            os.makedirs(dirname)
-        with open(dirname+'spikes.csv', 'w', newline='') as csv_file:
-            writer = csv.writer(csv_file)
-            cat = ["Spikiness", "Peaks", "Transitional peaks"]
-            kind = ["in general", "voormeting", "instructie",
-                    "non-adaptief", "adaptief na les",
-                    "adaptief herhaling", "nameting"]
-            header_row = ["Student", "Leerdoel"]
-            for c in cat:
-                for k in kind:
-                    header_row.append(c+" "+k)
-            writer.writerow(header_row)
-            errors = 0
-            for user in self.handler.get_users():
-                for learn_obj in np.unique(self.handler.learn_obj_ids):
-                    try:
-                        f = matplotlib.pyplot.figure(figsize=(5, 5), dpi=100)
-                        axes = matplotlib.pyplot.gca()
-                        axes.set_ylim([-1.15, 1.1])
-                        a = f.add_subplot(111)
-                        graph_n, graph_l, graph_f, o_graph, \
-                            split, answers = \
-                            self.handler.get_graph_variables(user,
-                                                             method=self.method,
-                                                             oid=learn_obj)
-                        x = [1+i for i in range(len(graph_n))]
-                        # a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
-                        height = 1.  # max([max(graph_n), max(graph_l)])
-                        low = -1.  # min([min(graph_n), min(graph_l)])
-                        height = height + .05*(height-low)
-                        a.plot([split[0], split[0]], [low, height], color="black")
-                        if split[0] is not None:
-                            a.text(max(split[0], len(graph_n)/50), height,
-                                   str(split[1]),
-                                   horizontalalignment='center',
-                                   verticalalignment='center',
-                                   bbox=dict(facecolor='white', edgecolor='white',
-                                             alpha=1.0))
-                        # a.plot(x, graph_n,
-                        #        label="Nieuwe curve", color="black")
-                        # a.plot(x, graph_l, label="Oude curve",
-                        #        color="deeppink", dashes=[2, 2])
-                        a.plot(x, o_graph, label="Oude oude curve",
-                               color="cyan")
-                        new_low = -1.1  # low - .1 * (height - low)
-                        new_height = -1.05  # new_low + .05 * (height - low)
-                        a.plot(range(1, len(answers)+1),
-                               [new_height if a == 1 else new_low for a in
-                                answers],
-                               color="red", label="Answers")
-                        # a.legend()
+    def load_student_workbook(self, fname, sheetname=None):
+        """
+        Loads the workbook with the student actions, if possible from pickle.
+        Note: The make up of the workbook should fit in what columns are being
+        extracted.
 
-                        boundary_list = self.handler.boundary_list[:]
-                        boundary_list = [1 if q == 0 else q for q in
-                                         boundary_list]  # To start at 1
-                        color_list = self.handler.color_list[:len(boundary_list) - 1]
-                        for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
-                                             color_list):
-                            a.broken_barh([(b1, b2 - b1)],
-                                          (low + .25 * (height - low),
-                                           .5 * (height - low)),
-                                          facecolors=c)
-                        fname = 'student {} objective {}.png'.format(user,
-                                                                     learn_obj)
-                        f.savefig(fname=dirname + fname)
-                        matplotlib.pyplot.close()
-                        print("coordinates are {}".format(graph_n))
-                        print("saved student {} objective {}".format(user,
-                                                                     learn_obj))
-                        self.write_spikes(user, learn_obj,
-                                          self.handler.boundary_list,
-                                          o_graph, writer)
-                    except Exception as e:
-                        print("failed saving student {} "
-                              "objective {} because of {}".format(user, learn_obj,
-                                                                  e))
-                        errors += 1
-            print("saved all graphs with {} errors".format(errors))
-
-    def write_spikes(self, student, loid, bounds, graph, writer):
-        row = [str(student), str(loid)]
-        n_peaks, peak_per_bound, trans_peak = self.calc_peaks(graph, bounds)
-        gen_spikiness, spikiness_per_bound = self.calc_spikes(graph, bounds)
-        # Spikiness
-        row.append(gen_spikiness)
-        for sp in spikiness_per_bound:
-            row.append(sp)
-
-        # Peaks
-        row.append(n_peaks)
-        for p in peak_per_bound:
-            row.append(p)
-
-        # Transition peaks
-        row.append(sum(trans_peak))
-        for p in trans_peak:
-            row.append(p)
-
-        # Write results
-        writer.writerow(row)
-
-    def calc_peaks(self, graph, bounds):
-        locs = []
-        n_peaks = 0
-        peak_per_bound = [0, 0, 0, 0, 0, 0]
-        trans_peak = [0, 0, 0, 0, 0, 0]
-        m_s = .0015  # Minimum spikiness
-        # Track current bound
-        bound = 0  # Tracks current bound
-        while 0 == bounds[bound+1]:
-            bound += 1
-
-        # first answer
-        old_j = graph[0]
-        if graph[0] > graph[1]+m_s:
-            locs.append(0)
-            n_peaks += 1
-            peak_per_bound[bound] = 1
-            trans_peak[bound] = 1
-
-        # middle answers
-        for i in range(1, len(graph)-1):
-            j = graph[i]
-            n = graph[i+1]
-            if i+2 > bounds[bound+1]:
-                while i+2 > bounds[bound+1]:
-                    bound += 1
-                    # print("Bound is now at {}".format(bound))
-                if (j > old_j+m_s) and (j > n+m_s):
-                    # print("Peak, plus transition at position {}".format(i))
-                    locs.append(i)
-                    trans_peak[bound] += 1
-                    n_peaks += 1
-                    peak_per_bound[bound] += 1
-            else:
-                if (j > old_j+m_s) and (j > n+m_s):
-                    # print("Peak at position {}".format(i))
-                    locs.append(i)
-                    n_peaks += 1
-                    peak_per_bound[bound] += 1
-            old_j = j
-
-        # last answer
-        if graph[-1]>old_j+m_s:
-            locs.append(len(graph)-1)
-            n_peaks+=1
-            peak_per_bound[bound] += 1
-
-        print("peaks are at {}".format(locs))
-        return n_peaks, peak_per_bound, trans_peak
-
-    def calc_spikes(self, graph, bounds):
-        gen_sp = max(graph)/(sum(graph)/len(graph))
-        lst_sp = []
-        for b1, b2 in zip(bounds[:-1], bounds[1:]):
-            part = graph[b1:b2]
-            if len(part)==0 or sum(part)==0:
-                lst_sp.append("NaN")
-            else:
-                lst_sp.append(max(part)/(sum(part)/len(part)))
-        return gen_sp, lst_sp
-
-
-class StartPage(tk.Frame):
-    """ First page that is shown
-	"""
-
-    def __init__(self, parent, controller: GraphGUI):
-        tk.Frame.__init__(self, parent)
-        self.controller = controller
-        # Set up label
-        label = ttk.Label(self, text='This is the start page', font=LARGE_FONT)
-        label.grid(pady=10, padx=10, columnspan=2, sticky='nswe')
-
-        # Set up menu for user choice.
-        options = list(controller.handler.get_users())
-        self.variable = tk.StringVar(self)
-        self.variable.set(options[0])
-        self.user_id = 0
-
-        print(options)
-        menu = ttk.OptionMenu(self, self.variable, *options,
-                              command=self.controller.upd_user)
-        menu.grid(row=1, sticky='we')
-
-        # Set up Button to choose option
-        button = ttk.Button(self, text='Get graph for this user',
-                            command=lambda: controller.show_frame(GraphPage))
-        button.grid(row=2, sticky='we')
-
-
-class GraphPage(tk.Frame):
-    """ First page that is shown
-
-	TODO - Change to real page one
-	"""
-
-    def __init__(self, parent, controller):
-        tk.Frame.__init__(self, parent)
-        # label = ttk.Label(self, text='This is page 1', font=LARGE_FONT)
-        # label.pack(pady=10, padx=10)
-        # button = ttk.Button(self, text='Go back home',
-        # 	command=lambda: controller.show_frame(StartPage))
-        # button.pack()
-        self.controller = controller
-
-        # Set up menu for user choice.
-        stud_id_options = list(controller.handler.get_users())
-        self.stud_id_variable = tk.StringVar(self)
-        self.stud_id_variable.set(controller.user_id)
-
-        learn_obj_id_options = \
-            list(np.unique(controller.handler.learn_obj_ids)[1:])
-        self.learn_obj_id_variable = tk.StringVar(self)
-        # self.learn_obj_id_variable.set(learn_obj_id_options[0])
-
-        navigation_frame = tk.Frame(self)
-        button1 = ttk.Button(navigation_frame, text='<',
-                             command=lambda: self.next_user(True))
-        menu = ttk.OptionMenu(navigation_frame, self.stud_id_variable,
-                              stud_id_options[0], *stud_id_options,
-                              command=controller.upd_user)
-        learning_goal_menu = ttk.OptionMenu(navigation_frame,
-                                            self.learn_obj_id_variable,
-                                            learn_obj_id_options[0],
-                                            *learn_obj_id_options,
-                                            command=controller.upd_learn_goal)
-        button2 = ttk.Button(navigation_frame, text='>',
-                             command=lambda: self.next_user())
-        button1.grid(column=0, row=0)
-        ttk.Label(navigation_frame, text="Pick a student:").grid(column=1,
-                                                                 row=0)
-        menu.grid(column=2, row=0)
-        button2.grid(column=3, row=0)
-        ttk.Label(navigation_frame, text="Pick the learning goal:").grid(
-            column=4,
-            row=0)
-        learning_goal_menu.grid(column=5, row=0)
-        navigation_frame.pack()
-
-        method_frame = tk.Frame(self)
-        ttk.Label(method_frame, text='Include attempts of exercise:').grid(
-            row=0,
-            column=0)
-        self.method_var = tk.IntVar()
-        self.method_var.set(0)
-        self.methods = ['all', 'first', 'second', 'all but first', 'last']
-        for i, pick in enumerate(self.methods):
-            chk = ttk.Radiobutton(method_frame, text=pick,
-                                  variable=self.method_var,
-                                  value=i, command=self.change_method)
-            chk.grid(row=0, column=i + 1)
-        ttk.Button(method_frame, text='Save graph',
-                   command=controller.save_graph).grid(row=0, column=len(
-            self.methods) + 1)
-        ttk.Button(method_frame,
-                   text='Save all graphs',
-                   command=controller.save_all_graphs).grid(row=0,
-                                                            column=len(
-                                                                self.methods) + 2)
-        method_frame.pack()
-
-        canvas = FigureCanvasTkAgg(controller.f, self)
-        canvas.draw()
-        canvas.get_tk_widget().pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
-        canvas._tkcanvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-        values_frame = tk.Frame(self)
-        label_l0 = ttk.Label(values_frame, text='L0:')
-        label_t = ttk.Label(values_frame, text='T:')
-        label_g = ttk.Label(values_frame, text='G:')
-        label_s = ttk.Label(values_frame, text='S:')
-        self.l0_variable = tk.StringVar()
-        self.l0_variable.set(str(controller.handler.m2m.p_l0))
-        textbox_l0 = ttk.Entry(values_frame, textvariable=self.l0_variable)
-        self.t_variable = tk.StringVar()
-        self.t_variable.set(str(controller.handler.m2m.p_T))
-        textbox_t = ttk.Entry(values_frame, textvariable=self.t_variable)
-        self.g_variable = tk.StringVar()
-        self.g_variable.set(str(controller.handler.m2m.p_G))
-        textbox_g = ttk.Entry(values_frame, textvariable=self.g_variable)
-        self.s_variable = tk.StringVar()
-        self.s_variable.set(str(controller.handler.m2m.p_S))
-        textbox_s = ttk.Entry(values_frame, textvariable=self.s_variable)
-        label_l0.grid(row=0, column=0)
-        textbox_l0.grid(row=0, column=1)
-        label_t.grid(row=0, column=2)
-        textbox_t.grid(row=0, column=3)
-        label_g.grid(row=0, column=4)
-        textbox_g.grid(row=0, column=5)
-        label_s.grid(row=0, column=6)
-        textbox_s.grid(row=0, column=7)
-        button_update = ttk.Button(values_frame, text='Update values',
-                                   command=self.update_values)
-        button_update.grid(row=0, column=8)
-        values_frame.pack()
-
-    def update_values(self):
-        m2m_list = [self.controller.handler.m2m.p_l0,
-                    self.controller.handler.m2m.p_T,
-                    self.controller.handler.m2m.p_G,
-                    self.controller.handler.m2m.p_S]
-        for id, entry in enumerate([self.l0_variable, self.t_variable,
-                                    self.g_variable, self.s_variable]):
+        :param fname: the path to the excel file.
+        """
+        if sheetname is None:
+            excel_file = fname
+            while fname[-1] != '.':
+                fname = fname[:-1]
+            fname = fname.split('/')[-1]+"pkl"
+            self.max_row = 8088  # self.get_max_row()
             try:
-                value = float(entry.get())
-            except ValueError:
-                value = 0.00
-                entry.set(0.00)
-            m2m_list[id] = value
-            entry.set(value)
-            print(m2m_list)
-        self.controller.handler.m2m.p_l0 = m2m_list[0]
-        self.controller.handler.m2m.p_T = m2m_list[1]
-        self.controller.handler.m2m.p_G = m2m_list[2]
-        self.controller.handler.m2m.p_S = m2m_list[3]
-        self.controller.update_graph(0)
+                print("Trying to open {}".format(fname))
+                self.dates, self.times, self.user_ids, self.learn_obj_ids, \
+                self.exercise_ids, self.corrects, self.ability_scores \
+                    = pickle.load(open(fname, "rb"))
+            except FileNotFoundError:
+                print("Failed opening {}\nInstead opening {}".format(fname,
+                                                                     excel_file))
+                wb = load_workbook(excel_file)
+                self.ws = wb.active
+                self.dates = self.get_column(2)
+                self.times = self.get_column(3)
+                self.user_ids = self.get_column(5)
+                self.learn_obj_ids = self.get_column(7)
+                self.exercise_ids = self.get_column(6)
+                self.corrects = self.get_column(8)
+                self.ability_scores = self.get_column(9)
+                pickle.dump([self.dates, self.times, self.user_ids,
+                             self.learn_obj_ids, self.exercise_ids,
+                             self.corrects, self.ability_scores], open(fname,
+                                                                       "wb"))
+        else:
+            return pd.read_excel(fname, sheetname)
 
-    def change_method(self):
-        method = self.methods[self.method_var.get()]
-        self.controller.method = method
+    def get_max_row(self, column=1):
+        """
+        Gets the maximum row value in the excel file.
 
-    def next_user(self, reverse=False):
-        id_plus = 1
-        if reverse is True:
-            id_plus = -1
-        self.stud_id_variable.set(self.controller.move_user(id_plus))
+        Needed to bound the get_column function
+        :param column: integer representing for what column we find the last
+            row.
+        :return: integer representing the last column with a value.
+        """
+        val = self.ws.cell(row=1, column=column).value
+        i = 1
+        while val:
+            i += 1
+            val = self.ws.cell(row=i, column=column).value
+        return i
+
+    def get_color_row(self, column=1):
+        """
+        Get's the index of the row where the color is located.
+
+        Needed to split the indices for the exercises in different colors.
+
+        :param column: The column in which we want to find the change.
+        :return: integer representing the row index where the color changes.
+        """
+        for i in range(1, 20):
+            # Find the color of the cell.
+            color = self.ws.cell(row=i, column=column).fill.start_color.index
+            if color != '00000000':
+                return i
+
+    def get_column(self, cid, start_row=8, end_row=None):
+        """
+        Get the values of a certain column.
+
+        :param cid: integer; the ID of the column from which we
+            get the variables
+        :param start_row: integer; the ID of which row we start.
+        :param end_row: integer; the ID of what the last row is that we
+            include. defaults to self.max_row
+        :return: numpy array with the values in the specified column.
+        """
+        # Set default value
+        if end_row is None:
+            end_row = self.max_row
+
+        # Check whether parameters are valid, else return empty array
+        if end_row <= start_row:
+            return np.array([])
+
+        # Retrieve the values in the column
+        column = []
+        for i in range(start_row, end_row):
+            # Get value from cell.
+            value = self.ws.cell(row=i, column=cid).value
+            # Make sure the value is implemented correctly.
+            if value or value == 0:
+                column.append(value)
+            if value is None:
+                column.append(None)
+        return np.array(column)
+
+    def get_users(self):
+        """
+        Get the unique ID's of all users.
+        :return: numpy array containing all users once.
+        """
+        return np.unique(self.user_ids)
+
+    # TODO: check whether still used. if so implement more methods.
+    # def get_corrects_from_user(self, user_id=0, method='all'):
+    #     """
+    #     Get the answers from a user in the column correct.
+    #
+    #     :param user_id: string representing the user.
+    #     :param method: what type of answers should be given.
+    #     :return: the answers given by a user according to a certain method.
+    #     """
+    #     if method == 'all':
+    #         return self.corrects[np.where(self.user_ids == user_id)]
+
+    def get_graph_variables(self, user_id=0, method='all', oid=None):
+        """
+        Generates the variables that will be shown in the graph.
+
+        Create the boundaries and colors for the list representing the phase of
+        the lesson. get the P(J) values per answer of a student and return that
+        as a list.
+        Method handles what happens when a student tries multiple answers
+        per exercise. The options are:
+        - all: use all answers
+        - first: Use only the first answer on any exercise
+        - second: Use only the second answer on any exercise
+        - all but first: Use all but the first answer on any exercise.
+        - last: use the last answer on any exercise.
+        :param user_id: String representing the student.
+        :param method: String representing the method of selection of answers.
+        :param oid:
+        :return:
+        """
+        print("getting variables for user {}".format(user_id))
+        if oid is not None:
+            print("and for skill id {}".format(oid))
+        self.set_ps_correct(oid)
+        p_jn, p_jl, p_jf, o_p_j, split, answers = self.m2m.get_p_js(
+            user_id=user_id, method=method, objective_id=oid)
+        self.graph_length = len(p_jl)
+        self.boundary_list, self.color_list = self.m2m.get_color_bars()
+        return [p_jn, p_jl, p_jf, o_p_j, split, answers]
+
+    def set_ps_correct_calc(self, oid):
+        """ Method to generate the pre calculated parameters. """
+        loids = np.where(self.learn_obj_ids == oid)
+        sames = [0]
+        answers = [self.corrects[loids[0][0]]]
+        for l, nextl in zip(loids[0][:-1], loids[0][1:]):
+            if self.user_ids[l] == self.user_ids[nextl]:
+                sames.append(1)
+            else:
+                sames.append(0)
+            answers.append(self.corrects[nextl])
+        f = 0
+        ol, ot, og, os = ParameterExtractor().smart_ssr(answers, sames,
+                                                      1000, 10) #old params
+        l, t, g, s, f = [0, 0, 0, 0, 0]#\
+            # ParameterExtractor_with_forget().smart_ssr_f(answers,
+            #                                                          sames,
+            #                                                          1000,
+            #                                                          10)
+        self.m2m.set_ps(l, t, g, s, f, ol, ot, og, os)
+
+    def set_ps_correct(self, oid):
+        """
+        Set the corresponding precalculated parameters for the learning goal.
+        :param oid: string representing which learning goal is used.
+        """
+        loids = ['7771', '7789', '8025', '7579']  # hardcoded for this file
+        position = loids.index(str(oid).replace("a", ""))
+
+        l = self.l0s[position]
+        t = self.ts[position]
+        g = self.gs[position]
+        s = self.ss[position]
+        f = self.fs[position]
+
+        ol = self.ol0s[position]
+        ot = self.ots[position]
+        og = self.ogs[position]
+        os = self.oss[position]
+        self.m2m.set_ps(l, t, g, s, f, ol, ot, og, os)
+
+    def get_color_ids(self, fname='res/ID exercises.xlsx'):
+        """
+        Set what exercises belong to what phase in the lesson.
+        :param fname: Path to the file containing information about the
+            exercises.
+        :return: per lesson phase a list of the corresponding ID's
+        """
+        wb = load_workbook(fname)
+        self.ws = wb.active
+        pre = list(self.get_column(1, 3))
+        c_bound = [self.get_color_row(i) for i in range(2, 5)]
+        cin = list(self.get_column(2, 3, c_bound[0])) + \
+              list(self.get_column(3, 3, c_bound[0])) + \
+              list(self.get_column(4, 3, c_bound[0]))
+        cex = list(self.get_column(2, c_bound[0])) + \
+              list(self.get_column(3, c_bound[0])) + \
+              list(self.get_column(4, c_bound[0]))
+        aex = []
+        raex = []
+        post = list(self.get_column(5, 3))
+        return (pre, cin, cex, aex, raex, post)
 
 
-def qf(quick_print):
-    print(quick_print)
+class MomentByMoment:
+    def __init__(self, user_ids, corrects, handler: DataHandler):
+        self.p_l0 = 0.064
+        self.p_T = 0.095
+        self.p_G = 0.299
+        self.p_S = 0.1
+        self.p_F = .08
+        self.p_ln = []
+        self.user_ids = user_ids
+        try:
+            self.users = np.unique(user_ids)
+        except TypeError:
+            self.users = self.unique(user_ids)
+        self.answers = corrects
+        self.handler = handler
+
+    def unique(self, lst):
+        new_lst = []
+        for item in lst:
+            print(item)
+            if str(item) not in new_lst:
+                new_lst.append(str(item))
+        return np.array(new_lst)
+
+    def set_ps(self, l, t, g, s, f, ol, ot, og, os):
+        """ Setter for the precalculated parameters. """
+        self.p_l0 = l
+        self.p_T = t
+        self.p_G = g
+        self.p_S = s
+        self.p_F = f
+
+        # For old graphs
+        self.p_ol0 = ol
+        self.p_oT = ot
+        self.p_oG = og
+        self.p_oS = os
 
 
-if __name__ == '__main__':
-    app = GraphGUI()
-    ani = animation.FuncAnimation(app.f, app.update_graph, interval=100)
-    app.mainloop()
+    def get_p_js(self, user_id, method='all', objective_id=None):
+        """ Get and calculate the P(J_n).
+
+        P(J_n) = P(J_l) - P(J_f). This is calculated with P(L), P(~L^T),
+        P(~L^~T) and P(L^F).
+
+        :param user_id: string; the id of the user for which we want P(J).
+        :param method: string; How we handle multiple answers for one exercise.
+        :param objective_id: string: For which objective_id we want answers.
+        :returns: list of P(J) per answer.
+        """
+        # get the correct answers based on methods.
+        user_answers, split = self.filter_answers(user_id, method,
+                                                  objective_id)
+
+        #calculate P(L_n) based on the answers.
+        p_ln = self.calculate_ln(user_answers)
+        # Calculate P(~l_n^T) and P(~L_n~T)
+        p_not_ln_t = [(1 - ln) * self.p_T for ln in p_ln]
+        p_not_ln_not_t = [(1 - ln) * (1 - self.p_T) for ln in p_ln]
+        p_ln_f = [ln * self.p_F for ln in p_ln]
+        p_ln_not_f = [ln * (1 - self.p_F) for ln in p_ln]
+
+        p_jl = self.calculate_p_jl(user_answers, p_ln, p_not_ln_t,
+                                   p_not_ln_not_t)
+        p_jf = self.calculate_p_jf(user_answers, p_ln_f, p_not_ln_t,
+                                   p_not_ln_not_t, p_ln_not_f)
+
+        old_ln = self.calculate_ln(user_answers, old=True)
+        old_not_ln_t = [(1 - ln) * self.p_oT for ln in old_ln]
+        print(self.p_oT, old_not_ln_t)
+        old_not_ln_not_t = [(1 - ln) * (1 - self.p_oT) for ln in old_ln]
+        old_graph = self.calculate_p_jl(user_answers, old_ln, old_not_ln_t,
+                                        old_not_ln_not_t, old=True)
+
+        return [jl-jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf, old_graph, \
+               split, user_answers
+
+    def filter_answers(self, user_id, method, objectives_id):
+        """ Filter the answers on user, objective and method.
+
+        :param user_id: string; the user ID.
+        :param method: string; How we handle multiple answers on an exercise.
+        :param objectives_id: string; The ID for the objectives.
+        :return: list of answers to calculate P(J) for.
+        """
+
+        # Get the ID's of which data is to be selected
+        self.chosen_ids = np.where(
+            (self.handler.learn_obj_ids == objectives_id) &
+            (self.user_ids == user_id))
+
+        # Get the data.
+        user_answers = self.answers[self.chosen_ids]
+        user_objectives = self.handler.learn_obj_ids[self.chosen_ids]
+        user_ids = self.user_ids[self.chosen_ids]
+        user_excs = self.handler.exercise_ids[self.chosen_ids]
+        user_dates = self.handler.dates[self.chosen_ids]
+        user_abs = self.handler.ability_scores[self.chosen_ids]
+
+        # Filter the data according to method.
+        if method not in ['all', 'first', 'second', 'all but first', 'last']:
+            raise NotImplementedError
+        if method == 'first':
+            user_answers = self.filter_all_but_first(user_answers, user_excs)
+        if method == 'second':
+            user_answers = self.filter_all_but_second(user_answers, user_excs)
+        if method == 'all but first':
+            user_answers = self.filter_first(user_answers, user_excs)
+        if method == 'last':
+            user_answers = self.filter_all_but_last(user_answers, user_excs)
+
+        # Store the exercises.
+        self.excs = user_excs
+        self.dats = user_dates
+
+        split = -1
+        while user_abs[split+1] == 'NULL' and split<len(user_abs)-2:
+            split = split+1
+        split += 1
+        if user_abs[split] == 'NULL':
+            return user_answers, (None, '')
+        return user_answers, (split, user_abs[split])
+
+    def filter_all_but_first(self, answers, exercise_ids):
+        """
+        Filter out all but the first answers per exercise.
+
+        :param answers:         list of answers, to be filtered.
+        :param exercise_ids:    list of exercise ID's to indicate to which
+            exercise answers belong.
+        :return: list of all but the first answers for an exercise.
+        """
+        exercises_processed = []
+        return_answers = []
+        for i in range(len(answers)):
+            # If it is the first time that I see this exercise:
+            if exercise_ids[i] not in exercises_processed:
+                # Keep answer.
+                return_answers.append(answers[i])
+                # Store exercise ID.
+                exercises_processed.append(exercise_ids[i])
+        return return_answers
+
+    def filter_all_but_second(self, answers, exercise_ids):
+        """
+        Filter out all but the second answers per exercise.
+
+        :param answers:         list of answers, to be filtered.
+        :param exercise_ids:    list of exercise ID's to indicate to which
+            exercise answers belong.
+        :return: list of all but the second answers for an exercise.
+        """
+        exercises_processed = []
+        exercises_processed_twice = []
+        return_answers = []
+        for i in range(len(answers)):
+            if exercise_ids[i] not in exercises_processed:
+                exercises_processed.append(exercise_ids[i])
+            else:
+                if exercise_ids[i] not in exercises_processed_twice:
+                    return_answers.append(answers[i])
+                    exercises_processed_twice.append(exercise_ids[i])
+        return return_answers
+
+    def filter_first(self, answers, exercise_ids):
+        """
+        Filter out all the first answers per exercise.
+
+        :param answers:         list of answers, to be filtered.
+        :param exercise_ids:    list of exercise ID's to indicate to which
+            exercise answers belong.
+        :return: list of all the first answers for an exercise.
+        """
+        exercises_processed = []
+        return_answers = []
+        for i in range(len(answers)):
+            if exercise_ids[i] not in exercises_processed:
+                exercises_processed.append(exercise_ids[i])
+            else:
+                return_answers.append(answers[i])
+        return return_answers
+
+    def filter_all_but_last(self, answers, exercise_ids):
+        """
+        Filter out all but the last answers per exercise.
+
+        :param answers:         list of answers, to be filtered.
+        :param exercise_ids:    list of exercise ID's to indicate to which
+            exercise answers belong.
+        :return: list of all but the last answers for an exercise.
+        """
+        # Reverse list, so last answers are first.
+        answers = answers[::-1]
+        exercises_processed = []
+        return_answers = []
+        for i in range(len(answers)):
+            if exercise_ids[i] not in exercises_processed:
+                return_answers.append(answers[i])
+                exercises_processed.append(exercise_ids[i])
+        return return_answers[::-1]
+
+    def calculate_ln(self, answers, old=False):
+        """
+        Calculate P(L_n)
+        :param answers: list of answers over which we calculate P(L_n)
+        :return: a list of values of P(L_n)
+        """
+        p_ln = []
+        for answer_id in range(len(answers)):
+            if len(p_ln) == 0:
+                k = self.p_l0
+                if old is True:
+                    k = self.p_ol0
+            else:
+                k = p_ln[-1]
+            s = self.p_S
+            g = self.p_G
+            if old is True:
+                s = self.p_oS
+                g = self.p_oG
+            if answers[answer_id] == 1:
+                ln_prev_given_res = (k * (1 - s)) / (
+                    (k * (1 - s)) + ((1 - k) * g))
+            else:
+                ln_prev_given_res = (k * s) / ((k * s) + ((1 - k) * (1 - g)))
+            if old is False:
+                p_ln.append(ln_prev_given_res * (1.0 - self.p_F) +
+                            (1 - ln_prev_given_res) * self.p_T)
+            else:
+                p_ln.append(ln_prev_given_res +
+                            (1 - ln_prev_given_res) * self.p_oT)
+
+        return p_ln
+
+    def calculate_p_jf(self, answers, ln_f, n_ln_t, n_ln_n_t, ln_nf):
+        """
+        Calculates P(J_f). Based upon the precalculated changes P(L_n^F),
+        P(~L_n^T), P(~L_n^~T) and P(L_n^~F)
+
+        :param answers:
+        :param ln_f:
+        :param n_ln_t:
+        :param n_ln_n_t:
+        :param ln_nf:
+        :return:
+        """
+        p_jf = []
+        for a_id in range(len(answers) - 2):
+            p_ln_f = ln_f[a_id]
+            g = self.p_G
+            t = self.p_T
+            s = self.p_S
+            f = self.p_F
+            if answers[a_id + 1] == 1:
+                if answers[a_id + 2] == 1:                      # C C
+                    a_l_nf =  (1-s)*(1-f)*(1-s) + (1-s)* f   * g
+                    a_l_f =   g    * t   *(1-s) + g    *(1-t)* g
+                    a_nl_t =  a_l_nf
+                    a_nl_nt = a_l_f
+                else:                                           # C ~C
+                    a_l_nf =  (1-s)*(1-f)* s    + (1-s)* f   *(1-g)
+                    a_l_f =   g    * t   * s    + g    *(1-t)*(1-g)
+                    a_nl_t =  a_l_nf
+                    a_nl_nt = a_l_f
+            else:
+                if answers[a_id + 2] == 1:                      # ~C C
+                    a_l_nf =  s    *(1-f)*(1-s) + s    * f   * g
+                    a_l_f =   (1-g)* t   *(1-s) + (1-g)*(1-t)* g
+                    a_nl_t =  a_l_nf
+                    a_nl_nt = a_l_f
+                else:                                           # ~C ~C
+                    a_l_nf =  s    *(1-f)* s    + s    * f   *(1-g)
+                    a_l_f =   (1-g)* t   * s    + (1-g)*(1-t)*(1-g)
+                    a_nl_t =  a_l_nf
+                    a_nl_nt = a_l_f
+            a12 = a_nl_t * n_ln_t[a_id] + a_nl_nt * n_ln_n_t[a_id] + \
+                a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
+            # a12 = a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
+            p_jf.append(a_l_f * p_ln_f / a12)
+        return p_jf
+
+    def calculate_p_jl(self, answers, ln, n_ln_t, n_ln_n_t, old=False):
+        """
+        Calculate P(J_l). Was previous just P(J).
+
+        :param answers:     Whether student answered correct.
+        :param ln:          precalculated P(L_n)
+        :param n_ln_t:      precalculated P(~L_n^T)
+        :param n_ln_n_t:    precalculated P(~L_n^T)
+        :return:            List of P(J_l) for every answer except the last
+                            two.
+        """
+        p_jl = []
+        for a_id in range(len(answers) - 2):
+            p_l = ln[a_id]
+            p_nl_t = n_ln_t[a_id]
+            p_nl_nt = n_ln_n_t[a_id]
+            if old is True:
+                g = self.p_oG
+                t = self.p_oT
+                s = self.p_oS
+            else:
+                g = self.p_G
+                t = self.p_T
+                s = self.p_S
+            if answers[a_id + 1] == 1:
+                if answers[a_id + 2] == 1:  # RR
+                    a_l = (1 - s) ** 2
+                    a_nl_nt = g * (1 - t) * g + g * t * (1 - s)
+                else:  # RW
+                    a_l = s * (1 - s)
+                    a_nl_nt = g * (1 - t) * (1 - g) + g * t * s
+            else:
+                if answers[a_id + 2] == 1:  # WR
+                    a_l = s * (1 - s)
+                    a_nl_nt = g * (1 - t) * (1 - g) + (1 - g) * t * (1 - s)
+                else:  # WW
+                    a_l = s ** 2
+                    a_nl_nt = (1 - g) * (1 - t) * (1 - g) + (1 - g) * t * s
+            a_nl_t = a_l
+            a12 = p_l * a_l + p_nl_t * a_nl_t + p_nl_nt * a_nl_nt
+            p_jl.append(a_nl_t * p_nl_t / a12)
+        return p_jl
+
+    def get_color_bars(self):
+        # Gets the color corresponding to the boundaries. TODO: Update comment
+        bounds = [0, 0, 0, 0, 0, 0, 0]
+        colors = ['royalblue', 'darkorange', 'silver', 'gold', 'mediumblue',
+                  'olivedrab']
+
+        excs = self.excs
+        dats = self.dats
+        # find pre bound
+        # print('finding pre-test')
+
+        # print(e)
+        try:
+            e = excs[0]
+            print(e)
+            # if excs[1] in self.handler.pre_ids:
+            while e in self.handler.pre_ids:
+                bounds = [bounds[i] + 1 if i > 0 else bounds[i] for i in
+                          range(len(bounds))]
+                excs = excs[1:]
+                dats = dats[1:]
+                e = excs[0]
+
+            d = dats[0]
+            # Find class instruction
+            # print('finding instruction exercises')
+            while e in self.handler.c_in_ids:
+                bounds = [bounds[i] + 1 if i > 1 else bounds[i] for i in
+                          range(len(bounds))]
+                excs = excs[1:]
+                dats = dats[1:]
+                e = excs[0]
+
+            # Find class exercise
+            # print('finding class exercises')
+            while e in self.handler.c_ex_ids:
+                bounds = [bounds[i] + 1 if i > 2 else bounds[i] for i in
+                          range(len(bounds))]
+                excs = excs[1:]
+                d = dats[0]
+                dats = dats[1:]
+                e = excs[0]
+
+            # Find class adaptive
+            # print('finding class adaptive')
+            while dats[0].strftime("%d") == d.strftime("%d") \
+                    and not e == self.excs[0] \
+                    and not (bounds[1] == bounds[2]
+                             and bounds[2] == bounds[3]):
+                bounds = [bounds[i] + 1 if i > 3 else bounds[i] for i in
+                          range(len(bounds))]
+                excs = excs[1:]
+                dats = dats[1:]
+                e = excs[0]
+
+            # Find repetition adaptive and post test boundary
+            # Done by finding all post-test exercises backwards.
+            # print('finding repeated adaptive exercises')
+            excs = excs[::-1]
+            dats = dats[::-1]
+            bounds[-1] = len(self.excs)
+            bounds[-2] = bounds[-1]
+            d = dats[0]
+            found_post = False
+            while dats[0].strftime("%d") == d.strftime("%d"):
+                bounds[-2] -= 1
+                if excs[0] in self.handler.post_ids:
+                    found_post = True
+                excs = excs[1:]
+                dats = dats[1:]
+            if found_post is False:
+                bounds[-2] = bounds[-1]
+
+        except IndexError:
+            pass
+        print(bounds)
+        return bounds, colors
+
+
+class ParameterExtractor:
+    """
+    Calculates the pre-calculated parameters.
+
+    Has an option of brute force calculating the parameters or
+    """
+    def __init__(self):
+        # params = [L0, T, G, S, F]
+        self.params_min = [1e-15 for i in range(4)]
+        self.params_max = [1.0, 1.0, 0.3, 0.1]
+
+    def brute_force_params(self, answers, same, grain=100, L0_fix=None,
+                           T_fix=None, G_fix=None, S_fix=None):
+        """
+        Check for every parameter what the best value is.
+
+        if x_fix is None then the whole range will be tested.
+        :param answers: the answers given by the students
+        :param same: Whether the answers are switching to a new student.
+        :param grain: integer defining the amount of values being checked
+        :param L0_fix: integer; value of L0. if None, this will return best L0
+        :param T_fix: integer; value of T. if None, this will return best T
+        :param G_fix: integer; value of G. if None, this will return best G
+        :param S_fix: integer; value of S. if None, this will return best S
+
+        :return: values for L0, T, G and S that result in the lowest SSR.
+        """
+        # set ranges up
+        best_l0 = L0_fix
+        best_t = T_fix
+        best_g = G_fix
+        best_s = S_fix
+        best_SSR = len(answers) * 999999999999991
+        L0_range = self.get_range(L0_fix, 0, grain)
+        T_range = self.get_range(T_fix, 1, grain)
+        G_range = self.get_range(G_fix, 2, grain)
+        S_range = self.get_range(S_fix, 3, grain)
+
+        # Find best values
+        for L0 in L0_range:
+            # print('------------------------------------\nL0 is now at:{}'.format(L0))
+            for T in T_range:
+                for G in G_range:
+                    for S in S_range:
+                        # Get SSR for values
+                        new_SSR = self.get_s_s_r(L0, T, G, S, answers,
+                                                 same)
+
+                        # check whether new value improves old values
+                        if new_SSR <= best_SSR:
+                            best_l0, best_t, best_g, best_s, \
+                                best_SSR = [L0, T, G, S, new_SSR]
+                            # print('best parameters now at L0:{}, ' +
+                            #    'T:{}, G:{}, S:{}'.format(L0,
+                            # 	 T, G, S))
+        return best_l0, best_t, best_g, best_s
+
+    def get_s_s_r(self, L0, T, G, S, answers, sames=None):
+        """
+        Calculate the Sum Squared Residu.
+
+        This is a method that defines the fit of the parameters.
+        :param L0: integer; value of L0
+        :param T: integer; value of T
+        :param G: integer; value of G
+        :param S: integer; value of S
+        :param answers: list of answers given by students
+        :param sames: list of whether the answer is given by the same student.
+        :return: float; Summed squared residu
+        """
+        SSR = 0.0
+        S = max(1E-15, S)
+        T = max(1E-15, T)
+        G = max(1E-15, G)
+        L0 = max(1E-15, L0)
+        L = L0
+        # Make sure that there is a list with sames.
+        if sames is None:
+            sames = np.ones(answers.size)
+            sames[0] = 1
+
+        # for every answer update the SSR.
+        for same, answer in zip(sames, answers):
+            if same == 0:  # New student so reset to initial chance of learning
+                L = L0
+            # print(L, T, G, S, F)
+            SSR += (answer - (L * (1.0 - S) + (1.0 - L) * G)) ** 2
+            if answer == 0:
+                L_given_answer = (L * S) / ((L * S) + ((1.0 - L) * (1.0 - G)))
+            else:
+                L_given_answer = (L * (1.0 - S)) / (
+                    (L * (1.0 - S)) + ((1.0 - L) * G))
+            L = L_given_answer + (1.0 - L_given_answer) * T
+        return SSR
+
+    def get_range(self, possible_range, par_id, grain):
+        """
+        helperfunction to get the range for a parameter based on the grain.
+
+        returns either a list of the whole possible values if that value is
+        not set (possible_range=None) else it returns a list containing only
+        once the value of the set value.
+        :param possible_range: Either float with the preset value or None
+        :param par_id: the id of the parameter to find the boundaries for it.
+        :param grain: integer, how finegrained the range must be.
+        :return:
+        """
+        if possible_range is None:
+            return np.linspace(self.params_min[par_id],
+                               self.params_max[par_id],
+                               int(grain * self.params_max[par_id]),
+                               endpoint=False)[1:]
+        return [possible_range]
+
+    def smart_ssr(self, answers, same, grain, iterations):
+        best_l0 = self.brute_force_params(answers, same, grain,
+                                          None, 0.0, 0.0, 0.0)[0]
+        best_t = self.brute_force_params(answers, same, grain,
+                                         0.0, None, 0.0, 0.0)[1]
+        best_g = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, None, 0.0)[2]
+        best_s = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, 0.0, None)[3]
+        for i in range(iterations):
+            print("best is {}".format([best_l0, best_t, best_g, best_s]))
+            best_l0 = self.brute_force_params(answers, same, grain, None,
+                                              best_t, best_g, best_s)[0]
+            best_t = self.brute_force_params(answers, same, grain, best_l0,
+                                             None, best_g, best_s)[1]
+            best_g = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, None, best_s)[2]
+            best_s = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, best_g, None)[3]
+        return best_l0, best_t, best_g, best_s
+
+
+class ParameterExtractor_with_forget:
+    """
+    Calculates the pre-calculated parameters.
+
+    Has an option of brute force calculating the parameters or
+    """
+    def __init__(self):
+        # params = [L0, T, G, S, F]
+        self.params_min = [1e-15 for i in range(4)]
+        self.params_min.append(0.01)
+        self.params_max = [1.0, 1.0, 0.3, 0.1, 0.3]
+
+    def brute_force_params(self, answers, same, grain=100, L0_fix=None,
+                           T_fix=None, G_fix=None, S_fix=None, F_fix=None):
+        """
+        Check for every parameter what the best value is.
+
+        if x_fix is None then the whole range will be tested.
+        :param answers: the answers given by the students
+        :param same: Whether the answers are switching to a new student.
+        :param grain: integer defining the amount of values being checked
+        :param L0_fix: integer; value of L0. if None, this will return best L0
+        :param T_fix: integer; value of T. if None, this will return best T
+        :param G_fix: integer; value of G. if None, this will return best G
+        :param S_fix: integer; value of S. if None, this will return best S
+        :param F_fix: integer; value of F. if None, this will return best F
+
+        :return: values for L0, T, G, S and F that result in the lowest SSR.
+        """
+        # set ranges up
+        best_l0 = L0_fix
+        best_t = T_fix
+        best_g = G_fix
+        best_s = S_fix
+        best_f = F_fix
+        best_SSR = len(answers) * 999999999999991
+        L0_range = self.get_range(L0_fix, 0, grain)
+        T_range = self.get_range(T_fix, 1, grain)
+        G_range = self.get_range(G_fix, 2, grain)
+        S_range = self.get_range(S_fix, 3, grain)
+        F_range = self.get_range(F_fix, 4, grain)
+
+        # Find best values
+        for L0 in L0_range:
+            # print('------------------------------------\nL0 is now at:{}'.format(L0))
+            for T in T_range:
+                for G in G_range:
+                    for S in S_range:
+                        for F in F_range:
+                            # Get SSR for values
+                            new_SSR = self.get_s_s_r(L0, T, G, S, F, answers,
+                                                     same)
+
+                            # check whether new value improves old values
+                            if new_SSR <= best_SSR:
+                                best_l0, best_t, best_g, best_s, \
+                                best_f, best_SSR = [L0, T, G, S, F, new_SSR]
+                                # print('best parameters now at L0:{}, ' +
+                                #    'T:{}, G:{}, S:{}'.format(L0,
+                                # 	 T, G, S))
+        return best_l0, best_t, best_g, best_s, best_f
+
+    def get_s_s_r(self, L0, T, G, S, F_, answers, sames=None):
+        """
+        Calculate the Sum Squared Residu.
+
+        This is a method that defines the fit of the parameters.
+        :param L0: integer; value of L0
+        :param T: integer; value of T
+        :param G: integer; value of G
+        :param S: integer; value of S
+        :param F_: integer; value of F
+        :param answers: list of answers given by students
+        :param sames: list of whether the answer is given by the same student.
+        :return: float; Summed squared residu
+        """
+        SSR = 0.0
+        S = max(1E-15, S)
+        T = max(1E-15, T)
+        G = max(1E-15, G)
+        L0 = max(1E-15, L0)
+        F_ = max(1E-15, F_)
+        L = L0
+        # Make sure that there is a list with sames.
+        if sames is None:
+            sames = np.ones(answers.size)
+            sames[0] = 1
+
+        # for every answer update the SSR.
+        for same, answer in zip(sames, answers):
+            if same == 0:  # New student so reset to initial chance of learning
+                L = L0
+            # print(L, T, G, S, F)
+            SSR += (answer - (L * (1.0 - S) + (1.0 - L) * G)) ** 2
+            if answer == 0:
+                L_given_answer = (L * S) / ((L * S) + ((1.0 - L) * (1.0 - G)))
+            else:
+                L_given_answer = (L * (1.0 - S)) / (
+                    (L * (1.0 - S)) + ((1.0 - L) * G))
+            L = L_given_answer * (1.0 - F_) + (1.0 - L_given_answer) * T
+        return SSR
+
+    def get_range(self, possible_range, par_id, grain):
+        """
+        helperfunction to get the range for a parameter based on the grain.
+
+        returns either a list of the whole possible values if that value is
+        not set (possible_range=None) else it returns a list containing only
+        once the value of the set value.
+        :param possible_range: Either float with the preset value or None
+        :param par_id: the id of the parameter to find the boundaries for it.
+        :param grain: integer, how finegrained the range must be.
+        :return:
+        """
+        if possible_range is None:
+            return np.linspace(self.params_min[par_id],
+                               self.params_max[par_id],
+                               int(grain * self.params_max[par_id]),
+                               endpoint=False)[1:]
+        return [possible_range]
+
+    def smart_ssr_f(self, answers, same, grain, iterations):
+        best_l0 = self.brute_force_params(answers, same, grain,
+                                          None, 0.0, 0.0, 0.0, 0.0)[0]
+        best_t = self.brute_force_params(answers, same, grain,
+                                         0.0, None, 0.0, 0.0, 0.0)[1]
+        best_g = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, None, 0.0, 0.0)[2]
+        best_s = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, 0.0, None, 0.0)[3]
+        best_f = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, 0.0, 0.0, None)[4]
+        for i in range(iterations):
+            print("best is {}".format([best_l0, best_t, best_g, best_s,
+                                       best_f]))
+            best_l0 = self.brute_force_params(answers, same, grain, None,
+                                              best_t, best_g, best_s,
+                                              best_f)[0]
+            best_t = self.brute_force_params(answers, same, grain, best_l0,
+                                             None, best_g, best_s, best_f)[1]
+            best_g = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, None, best_s, best_f)[2]
+            best_s = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, best_g, None, best_f)[3]
+            best_f = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, best_g, best_s, None)[4]
+        return best_l0, best_t, best_g, best_s, best_f
+
+
+if __name__ == "__main__":  # TESTING
+    ex = ParameterExtractor()
+    dh = DataHandler()
+    for loid in np.unique(dh.learn_obj_ids):
+        print("getting parameters for goal {}".format(loid))
+        dh.set_ps_correct_calc(loid)
+        print("Best parameters are {}".format([dh.m2m.p_l0, dh.m2m.p_T,
+                                               dh.m2m.p_G, dh.m2m.p_S,
+                                               dh.m2m.p_F]))
