@@ -49,12 +49,15 @@ class GraphGUI(tk.Tk):
                                                         method=self.method,
                                                         oid=self.objective_id)
         self.a.clear()
-        self.a.plot(range(len(graph_n)), graph_n, label="P(Jn)")
-        # self.a.plot(range(len(graph_n)), graph_l, label="P(Jl)")
-        self.a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
-        self.a.plot(range(len(answers)), answers, label="Answers")
-        height = max(max(graph_n), max(graph_l), max(graph_f))
-        low = min(min(graph_n), min(graph_l), min(graph_f))
+        self.a.plot(range(len(graph_n)), graph_n, label="New Graph")
+        self.a.plot(range(len(graph_n)), o_graph, label="Old Graph")
+        # self.a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
+        self.a.plot(range(len(answers)),
+                    [-1.05 if a == 1 else -1.1 for a in answers],
+                    color="red", label="Answers")
+
+        height = 1 #max(max(graph_n), max(graph_l), max(graph_f))
+        low = -1 #min(min(graph_n), min(graph_l), min(graph_f))
         self.a.legend()
         self.a.plot([split[0], split[0]], [low, height], color="black")
         self.a.text(split[0], height, str(split[1]),

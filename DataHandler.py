@@ -208,13 +208,13 @@ class DataHandler:
                 sames.append(0)
             answers.append(self.corrects[nextl])
         f = 0
-        ol, ot, og, os = ParameterExtractor().smart_ssr(answers, sames,
-                                                      1000, 10) #old params
-        l, t, g, s, f = [0, 0, 0, 0, 0]#\
-            # ParameterExtractor_with_forget().smart_ssr_f(answers,
-            #                                                          sames,
-            #                                                          1000,
-            #                                                          10)
+        ol, ot, og, os = [0, 0, 0, 0] # ParameterExtractor().smart_ssr(
+        # answers, sames,
+                                       #               1000, 10) #old params
+        l, t, g, s, f = ParameterExtractor_with_forget().smart_ssr_f(answers,
+                                                                     sames,
+                                                                     1000,
+                                                                     10)
         self.m2m.set_ps(l, t, g, s, f, ol, ot, og, os)
 
     def set_ps_correct(self, oid):
@@ -316,11 +316,12 @@ class MomentByMoment:
 
         #calculate P(L_n) based on the answers.
         p_ln = self.calculate_ln(user_answers)
+        p_fn = self.calculate_fn(user_answers, p_ln)
         # Calculate P(~l_n^T) and P(~L_n~T)
         p_not_ln_t = [(1 - ln) * self.p_T for ln in p_ln]
         p_not_ln_not_t = [(1 - ln) * (1 - self.p_T) for ln in p_ln]
-        p_ln_f = [ln * self.p_F for ln in p_ln]
-        p_ln_not_f = [ln * (1 - self.p_F) for ln in p_ln]
+        p_ln_f = [ln * fn for ln, fn in zip(p_ln, p_fn)]
+        p_ln_not_f = [ln * (1 - fn) for ln, fn in zip(p_ln, p_fn)]
 
         p_jl = self.calculate_p_jl(user_answers, p_ln, p_not_ln_t,
                                    p_not_ln_not_t)
@@ -462,6 +463,25 @@ class MomentByMoment:
                 exercises_processed.append(exercise_ids[i])
         return return_answers[::-1]
 
+    def calculate_fn(self, answers, p_ln):
+        p_fn = []
+        for answer_id in range(len(answers)):
+            if len(p_fn) == 0:
+                k = self.p_F
+            else:
+                k = p_fn[-1]
+            s = self.p_S
+            g = self.p_G
+            l = p_ln[answer_id]
+            if answers[answer_id] == 0:
+                fn_prev_given_res = (k) / (
+                    (k) + ((1 - k) * s))
+            else:
+                fn_prev_given_res = (k * g) / ((k * g) + ((1-k) * (1 - s)))
+            p_fn.append(fn_prev_given_res  +
+                        (1 - fn_prev_given_res)*l)
+        return p_fn
+
     def calculate_ln(self, answers, old=False):
         """
         Calculate P(L_n)
@@ -485,9 +505,13 @@ class MomentByMoment:
                 ln_prev_given_res = (k * (1 - s)) / (
                     (k * (1 - s)) + ((1 - k) * g))
             else:
-                ln_prev_given_res = (k * s) / ((k * s) + ((1 - k) * (1 - g)))
+                if old is True:
+                    ln_prev_given_res = (k * s) / ((k * s) + ((1 - k) * (1 - g)))
+                else:
+                    ln_prev_given_res = (k * s * self.p_F) / ((k * s) + ((1-k)
+                                                               * (1 - g)))
             if old is False:
-                p_ln.append(ln_prev_given_res * (1.0 - self.p_F) +
+                p_ln.append(ln_prev_given_res +
                             (1 - ln_prev_given_res) * self.p_T)
             else:
                 p_ln.append(ln_prev_given_res +
@@ -863,7 +887,7 @@ class ParameterExtractor_with_forget:
                                 # 	 T, G, S))
         return best_l0, best_t, best_g, best_s, best_f
 
-    def get_s_s_r(self, L0, T, G, S, F_, answers, sames=None):
+    def get_s_s_r(self, L0, T, G, S, F_, answers, sames=None, verbose=False):
         """
         Calculate the Sum Squared Residu.
 
@@ -884,6 +908,7 @@ class ParameterExtractor_with_forget:
         L0 = max(1E-15, L0)
         F_ = max(1E-15, F_)
         L = L0
+        one_round_verbose = verbose
         # Make sure that there is a list with sames.
         if sames is None:
             sames = np.ones(answers.size)
@@ -892,15 +917,25 @@ class ParameterExtractor_with_forget:
         # for every answer update the SSR.
         for same, answer in zip(sames, answers):
             if same == 0:  # New student so reset to initial chance of learning
+                verbose = one_round_verbose
+                one_round_verbose = False
                 L = L0
+                if verbose is True:
+                    print("SSR: {}".format(SSR))
+                    print("Answer: {}, L: {}". format(answer, L))
             # print(L, T, G, S, F)
             SSR += (answer - (L * (1.0 - S) + (1.0 - L) * G)) ** 2
             if answer == 0:
-                L_given_answer = (L * S) / ((L * S) + ((1.0 - L) * (1.0 - G)))
+                L_given_answer = (L * S * (1.0 - F_)) / \
+                                 ((L * S) + ((1.0 - L) * (1.0 - G)))
             else:
                 L_given_answer = (L * (1.0 - S)) / (
                     (L * (1.0 - S)) + ((1.0 - L) * G))
-            L = L_given_answer * (1.0 - F_) + (1.0 - L_given_answer) * T
+            L = L_given_answer + (1.0 - L_given_answer) * T
+            if verbose is True:
+                print("Answer: {}, L: {}".format(answer, L))
+        # print("SSR: {}, L:{}, T:{}, G:{}, S:{}, F:{}".format(SSR, L0, T, G, S,
+        #                                                      F_))
         return SSR
 
     def get_range(self, possible_range, par_id, grain):
@@ -947,11 +982,13 @@ class ParameterExtractor_with_forget:
                                              best_t, best_g, None, best_f)[3]
             best_f = self.brute_force_params(answers, same, grain, best_l0,
                                              best_t, best_g, best_s, None)[4]
+            self.get_s_s_r(best_l0, best_t, best_g, best_s, best_f, answers,
+                           same, True)
         return best_l0, best_t, best_g, best_s, best_f
 
 
 if __name__ == "__main__":  # TESTING
-    ex = ParameterExtractor()
+    ex = ParameterExtractor_with_forget()
     dh = DataHandler()
     for loid in np.unique(dh.learn_obj_ids):
         print("getting parameters for goal {}".format(loid))
