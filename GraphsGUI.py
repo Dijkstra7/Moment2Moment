@@ -97,86 +97,99 @@ class GraphGUI(tk.Tk):
                                                                 self.objective_id)
         self.f.savefig(fname=fname)
 
-    def save_all_graphs(self, dirname='graphs_simone/'):
+    def save_all_graphs(self, dirname='graphs_forgot_learned/'):
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
-        with open(dirname+'spikes.csv', 'w', newline='') as csv_file:
+        with open(dirname+'exercise_counter.csv', 'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
-            cat = ["Spikiness", "Peaks", "Transitional peaks"]
+            cat = ["Exercise"]
             kind = ["in general", "voormeting", "instructie",
                     "non-adaptief", "adaptief na les",
                     "adaptief herhaling", "nameting"]
-            header_row = ["Student", "Leerdoel"]
+            header_row = ["Exercise ID"]
             for c in cat:
                 for k in kind:
                     header_row.append(c+" "+k)
             writer.writerow(header_row)
             errors = 0
             for user in self.handler.get_users():
-                for learn_obj in np.unique(self.handler.learn_obj_ids):
+                for learn_obj in np.unique(self.handler.learn_obj_ids)[1:]:
                     try:
-                        f = matplotlib.pyplot.figure(figsize=(5, 5), dpi=100)
-                        axes = matplotlib.pyplot.gca()
-                        axes.set_ylim([-1.15, 1.1])
-                        a = f.add_subplot(111)
+                        # f = matplotlib.pyplot.figure(figsize=(5, 5), dpi=100)
+                        # axes = matplotlib.pyplot.gca()
+                        # axes.set_ylim([-1.15, 1.1])
+                        # a = f.add_subplot(111)
                         graph_n, graph_l, graph_f, o_graph, \
-                            split, answers = \
+                        split, answers = \
                             self.handler.get_graph_variables(user,
                                                              method=self.method,
-                                                             oid=learn_obj)
-                        x = [1+i for i in range(len(graph_n))]
-                        # a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
-                        height = 1.  # max([max(graph_n), max(graph_l)])
-                        low = -1.  # min([min(graph_n), min(graph_l)])
-                        height = height + .05*(height-low)
-                        a.plot([split[0], split[0]], [low, height], color="black")
-                        if split[0] is not None:
-                            a.text(max(split[0], len(graph_n)/50), height,
-                                   str(split[1]),
-                                   horizontalalignment='center',
-                                   verticalalignment='center',
-                                   bbox=dict(facecolor='white', edgecolor='white',
-                                             alpha=1.0))
-                        # a.plot(x, graph_n,
-                        #        label="Nieuwe curve", color="black")
-                        # a.plot(x, graph_l, label="Oude curve",
-                        #        color="deeppink", dashes=[2, 2])
-                        a.plot(x, o_graph, label="Oude oude curve",
-                               color="cyan")
-                        new_low = -1.1  # low - .1 * (height - low)
-                        new_height = -1.05  # new_low + .05 * (height - low)
-                        a.plot(range(1, len(answers)+1),
-                               [new_height if a == 1 else new_low for a in
-                                answers],
-                               color="red", label="Answers")
-                        # a.legend()
-
-                        boundary_list = self.handler.boundary_list[:]
-                        boundary_list = [1 if q == 0 else q for q in
-                                         boundary_list]  # To start at 1
-                        color_list = self.handler.color_list[:len(boundary_list) - 1]
-                        for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
-                                             color_list):
-                            a.broken_barh([(b1, b2 - b1)],
-                                          (low + .25 * (height - low),
-                                           .5 * (height - low)),
-                                          facecolors=c)
-                        fname = 'student {} objective {}.png'.format(user,
-                                                                     learn_obj)
-                        f.savefig(fname=dirname + fname)
-                        matplotlib.pyplot.close()
-                        print("coordinates are {}".format(graph_n))
-                        print("saved student {} objective {}".format(user,
-                                                                     learn_obj))
+                                                             oid=learn_obj,
+                                                             saving=True)
+                        # x = [1+i for i in range(len(graph_n))]
+                        # # a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
+                        # height = 1.  # max([max(graph_n), max(graph_l)])
+                        # low = -1.  # min([min(graph_n), min(graph_l)])
+                        # height = height + .05*(height-low)
+                        # a.plot([split[0], split[0]], [low, height], color="black")
+                        # if split[0] is not None:
+                        #     a.text(max(split[0], len(graph_n)/50), height,
+                        #            str(split[1]),
+                        #            horizontalalignment='center',
+                        #            verticalalignment='center',
+                        #            bbox=dict(facecolor='white', edgecolor='white',
+                        #                      alpha=1.0))
+                        # # a.plot(x, graph_n,
+                        # #        label="Nieuwe curve", color="black")
+                        # # a.plot(x, graph_l, label="Oude curve",
+                        # #        color="deeppink", dashes=[2, 2])
+                        # a.plot(x, o_graph, label="Oude oude curve",
+                        #        color="cyan")
+                        # new_low = -1.1  # low - .1 * (height - low)
+                        # new_height = -1.05  # new_low + .05 * (height - low)
+                        # a.plot(range(1, len(answers)+1),
+                        #        [new_height if a == 1 else new_low for a in
+                        #         answers],
+                        #        color="red", label="Answers")
+                        # # a.legend()
+                        #
+                        # boundary_list = self.handler.boundary_list[:]
+                        # boundary_list = [1 if q == 0 else q for q in
+                        #                  boundary_list]  # To start at 1
+                        # color_list = self.handler.color_list[:len(boundary_list) - 1]
+                        # for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
+                        #                      color_list):
+                        #     a.broken_barh([(b1, b2 - b1)],
+                        #                   (low + .25 * (height - low),
+                        #                    .5 * (height - low)),
+                        #                   facecolors=c)
+                        # fname = 'student {} objective {}.png'.format(user,
+                        #                                              learn_obj)
+                        # f.savefig(fname=dirname + fname)
+                        # matplotlib.pyplot.close()
+                        # print("coordinates are {}".format(graph_n))
+                        # print("saved student {} objective {}".format(user,
+                        #                                              learn_obj))
                         # self.write_spikes(user, learn_obj,
                         #                   self.handler.boundary_list,
                         #                   o_graph, writer)
+
                     except Exception as e:
                         print("failed saving student {} "
                               "objective {} because of {}".format(user, learn_obj,
                                                                   e))
                         errors += 1
+                    pass
+            self.write_exercise_ids(
+                self.handler.m2m.count_exercises, writer)
             print("saved all graphs with {} errors".format(errors))
+
+    def write_exercise_ids(self, ids, writer):
+        print(len(ids))
+        for e, val in ids.items():
+            writer.writerow([e, val["total"], val["pre"], val["instr"],
+                             val["exerc"], val["cladap"], val["indadap"],
+                             val["post"]])
+
 
     def write_spikes(self, student, loid, bounds, graph, writer):
         row = [str(student), str(loid)]
@@ -206,7 +219,7 @@ class GraphGUI(tk.Tk):
         n_peaks = 0
         peak_per_bound = [0, 0, 0, 0, 0, 0]
         trans_peak = [0, 0, 0, 0, 0, 0]
-        m_s = .0015  # Minimum spikiness
+        m_s = .015  # Minimum spikiness
         # Track current bound
         bound = 0  # Tracks current bound
         while 0 == bounds[bound+1]:
