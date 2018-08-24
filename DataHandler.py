@@ -17,6 +17,7 @@ class DataHandler:
     Additionally an instance of the moment by moment calculator class is
     created.
     """
+
     def __init__(self,
                  fname="resultaten-radboud-all_anoniem "
                        "samengevoegd_editforfirstattempts.xlsx",
@@ -36,15 +37,16 @@ class DataHandler:
         self.ss = [0.1, 0.1, 0.1, 0.1]
         self.fs = [0.042, 0.064, 0.028, 0.012]
 
-        self.ol0s = [1, 0.001, .027, 0.536]  # From bruteforceparameters
-        self.ots = [1, 0.149, .059, 0.101]
-        self.ogs = [.3, 0.299, 0.250, 0.232]
+        self.ol0s = [1, .904,    .738,    .951]  # From bruteforceparameters
+        self.ots = [1, .002,    .017,    .025]
+        self.ogs = [.3, 0.299, 0.299, 0.299]
         self.oss = [0.1, 0.1, 0.1, 0.1]
 
         self.count_exercises = {}
+        self.curve = [{}, {}, {}, {}]
         # Retrieve the color belonging to the exercise IDS.
         self.pre_ids, self.c_in_ids, self.c_ex_ids, self.a_ex_ids, \
-            self.ra_ex_ids, self.post_ids = self.get_color_ids()
+        self.ra_ex_ids, self.post_ids = self.get_color_ids()
 
         # Initialize moment by moment class instance.
         self.m2m = MomentByMoment(self.user_ids, self.corrects, self)
@@ -61,7 +63,7 @@ class DataHandler:
             excel_file = fname
             while fname[-1] != '.':
                 fname = fname[:-1]
-            fname = fname.split('/')[-1]+"pkl"
+            fname = fname.split('/')[-1] + "pkl"
             self.max_row = 16384  # self.get_max_row()
             try:
                 print("Trying to open {}".format(fname))
@@ -191,27 +193,77 @@ class DataHandler:
         print("getting variables for user {}".format(user_id))
         if oid is not None:
             print("and for skill id {}".format(oid))
-        self.set_ps_correct(oid)
+        oididx = self.set_ps_correct(oid)
         p_jn, p_jl, p_jf, o_p_j, split, answers = self.m2m.get_p_js(
             user_id=user_id, method=method, objective_id=oid)
         self.graph_length = len(p_jl)
         self.boundary_list, self.color_list = self.m2m.get_color_bars(saving)
-        return [p_jn, p_jl, p_jf, o_p_j, split, answers]
+        if saving is True:
+            self.add_correctness_curves(self.boundary_list, answers, oididx,
+                                        self.m2m.excs)
+        return [p_jn, self.create_curve(self.curve[oididx]),
+                p_jf, o_p_j, split, answers]
+
+    def create_curve(self, curve_data):
+        orders = {}
+        for key, val in curve_data.items():
+            orders[key] = val["order"] / val["occurs"]
+        prob_order = [1512433, 1928354, 2151770, 2151771, 966492, 1067176,
+                      1041097, 832284, 1740148, 1740522, 1740541, 1740547,
+                      1334482, 1334489, 1334486, 1334488, 1152951, 1152955,
+                      1467251, 960793, 1474965, 1474964, 1474963, 1474962,
+                      2151774, 2151776, 1713996, 1713998, 1703196, 1703213,
+                      1707408, 1703212, 1703214, 1703217, 1707390, 1707394,
+                      1703090, 1703096, 1703097, 1703099, 1703100, 1703072,
+                      1703082, 1703081, 1703083, 1703103, 1702897, 1703108,
+                      2151774, 1683854, 1683859, 1683868, 1683947, 1683951,
+                      1683954, 1684039, 1684040, 1684029, 1684031, 1684032,
+                      1684033, 1684034, 1684035, 1684036, 1684038, 1684041,
+                      1684042, 1684064,  1684066, 2151775, 1686784, 1686785,
+                      1686786, 1686787, 1686788, 1686789, 1686790, 1686791,
+                      1686792, 1686793, 1686767, 1686769, 1686771, 1686772,
+                      1686774, 1686775, 1686781, 1686776]
+        sorted_idxs = sorted(curve_data.keys(), key=prob_order.index)
+        print(sorted_idxs)
+        curve = [curve_data[k]["correctness"] / curve_data[k]["occurs"] for k
+                 in sorted_idxs]
+        print(curve)
+        return curve
+
+    def add_correctness_curves(self, blist, answers, oid, excs_ids):
+        idx = blist[0]
+        for i in blist[:4]:
+            while idx < i:
+                if excs_ids[idx] not in self.curve[oid]:
+                    self.curve[oid][excs_ids[idx]] = {"order": 0,
+                                                      "correctness": 0,
+                                                      "occurs": 0}
+                self.curve[oid][excs_ids[idx]]["occurs"] += 1
+                self.curve[oid][excs_ids[idx]]["order"] += idx - blist[1]
+                if answers[idx] > 0:
+                    self.curve[oid][excs_ids[idx]]["correctness"] += 1
+                idx += 1
 
     def set_ps_correct_calc(self, oid):
-         """ Method to generate the pre calculated parameters. """
-         loids = np.where(self.learn_obj_ids == oid)
-         sames = [0]
-         answers = [self.corrects[loids[0][0]]]
-         for l, nextl in zip(loids[0][:-1], loids[0][1:]):
-             if self.user_ids[l] == self.user_ids[nextl]:
-                 sames.append(1)
-             else:
-                 sames.append(0)
-             answers.append(self.corrects[nextl])
-         l, t, g, s, f = ParameterExtractor().smart_ssr(answers, sames,
-                                                        1000, 10)
-         self.m2m.set_ps(l, t, g, s, f)
+        """ Method to generate the pre calculated parameters. """
+        bad_excs = self.pre_ids
+        bad_excs.append(self.post_ids)
+        bad_excs.append(self.c_in_ids)
+        loids = np.where((self.learn_obj_ids == oid)
+                         & (np.logical_not(np.isin(self.exercise_ids,
+                                                   bad_excs))))
+        sames = [0]
+        answers = [self.corrects[loids[0][0]]]
+        for l, nextl in zip(loids[0][:-1], loids[0][1:]):
+            if self.user_ids[l] == self.user_ids[nextl]:
+                sames.append(1)
+            else:
+                sames.append(0)
+            answers.append(self.corrects[nextl])
+        l, t, g, s = ParameterExtractor().smart_ssr(answers,
+                                                                     sames,
+                                                                     1000, 10)
+        # self.m2m.set_ps(l, t, g, s, f)
 
     def set_ps_correct(self, oid):
         """
@@ -232,6 +284,7 @@ class DataHandler:
         og = self.ogs[position]
         os = self.oss[position]
         self.m2m.set_ps(l, t, g, s, f, ol, ot, og, os)
+        return position
 
     def get_color_ids(self, fname='res/ID exercises.xlsx'):
         """
@@ -284,7 +337,6 @@ class MomentByMoment:
         self.p_oG = og
         self.p_oS = os
 
-
     def get_p_js(self, user_id, method='all', objective_id=None):
         """ Get and calculate the P(J_n).
 
@@ -300,7 +352,7 @@ class MomentByMoment:
         user_answers, split = self.filter_answers(user_id, method,
                                                   objective_id)
 
-        #calculate P(L_n) based on the answers.
+        # calculate P(L_n) based on the answers.
         p_ln = self.calculate_ln(user_answers)
         # Calculate P(~l_n^T) and P(~L_n~T)
         p_not_ln_t = [(1 - ln) * self.p_T for ln in p_ln]
@@ -320,7 +372,7 @@ class MomentByMoment:
         old_graph = self.calculate_p_jl(user_answers, old_ln, old_not_ln_t,
                                         old_not_ln_not_t, old=True)
 
-        return [jl-jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf, old_graph, \
+        return [jl - jf for jl, jf in zip(p_jl, p_jf)], p_jl, p_jf, old_graph, \
                split, user_answers
 
     def filter_answers(self, user_id, method, objectives_id):
@@ -334,8 +386,8 @@ class MomentByMoment:
 
         # Get the ID's of which data is to be selected
         self.chosen_ids = np.where(
-            (self.handler.learn_obj_ids == objectives_id) &
-            (self.user_ids == user_id))
+            (self.handler.learn_obj_ids == objectives_id)
+            & (self.user_ids == user_id))
 
         # Get the data.
         user_answers = self.answers[self.chosen_ids]
@@ -361,9 +413,15 @@ class MomentByMoment:
         self.excs = user_excs
         self.dats = user_dates
 
+        # bounds, _ = self.get_color_bars()
+        # user_answers = user_answers[bounds[2]:bounds[-2]]
+        # user_abs = user_answers[bounds[2]:bounds[-2]]
+
+        if len(user_abs)<1:
+            return user_answers, (None, '')
         split = -1
-        while user_abs[split+1] == 'NULL' and split<len(user_abs)-2:
-            split = split+1
+        while user_abs[split + 1] == 'NULL' and split < len(user_abs) - 2:
+            split = split + 1
         split += 1
         if user_abs[split] == 'NULL':
             return user_answers, (None, '')
@@ -468,7 +526,7 @@ class MomentByMoment:
                 g = self.p_oG
             if answers[answer_id] == 1:
                 ln_prev_given_res = (k * (1 - s)) / (
-                    (k * (1 - s)) + ((1 - k) * g))
+                        (k * (1 - s)) + ((1 - k) * g))
             else:
                 ln_prev_given_res = (k * s) / ((k * s) + ((1 - k) * (1 - g)))
             if old is False:
@@ -500,29 +558,29 @@ class MomentByMoment:
             s = self.p_S
             f = self.p_F
             if answers[a_id + 1] == 1:
-                if answers[a_id + 2] == 1:                      # C C
-                    a_l_nf =  (1-s)*(1-f)*(1-s) + (1-s)* f   * g
-                    a_l_f =   g    * t   *(1-s) + g    *(1-t)* g
-                    a_nl_t =  a_l_nf
+                if answers[a_id + 2] == 1:  # C C
+                    a_l_nf = (1 - s) * (1 - f) * (1 - s) + (1 - s) * f * g
+                    a_l_f = g * t * (1 - s) + g * (1 - t) * g
+                    a_nl_t = a_l_nf
                     a_nl_nt = a_l_f
-                else:                                           # C ~C
-                    a_l_nf =  (1-s)*(1-f)* s    + (1-s)* f   *(1-g)
-                    a_l_f =   g    * t   * s    + g    *(1-t)*(1-g)
-                    a_nl_t =  a_l_nf
+                else:  # C ~C
+                    a_l_nf = (1 - s) * (1 - f) * s + (1 - s) * f * (1 - g)
+                    a_l_f = g * t * s + g * (1 - t) * (1 - g)
+                    a_nl_t = a_l_nf
                     a_nl_nt = a_l_f
             else:
-                if answers[a_id + 2] == 1:                      # ~C C
-                    a_l_nf =  s    *(1-f)*(1-s) + s    * f   * g
-                    a_l_f =   (1-g)* t   *(1-s) + (1-g)*(1-t)* g
-                    a_nl_t =  a_l_nf
+                if answers[a_id + 2] == 1:  # ~C C
+                    a_l_nf = s * (1 - f) * (1 - s) + s * f * g
+                    a_l_f = (1 - g) * t * (1 - s) + (1 - g) * (1 - t) * g
+                    a_nl_t = a_l_nf
                     a_nl_nt = a_l_f
-                else:                                           # ~C ~C
-                    a_l_nf =  s    *(1-f)* s    + s    * f   *(1-g)
-                    a_l_f =   (1-g)* t   * s    + (1-g)*(1-t)*(1-g)
-                    a_nl_t =  a_l_nf
+                else:  # ~C ~C
+                    a_l_nf = s * (1 - f) * s + s * f * (1 - g)
+                    a_l_f = (1 - g) * t * s + (1 - g) * (1 - t) * (1 - g)
+                    a_nl_t = a_l_nf
                     a_nl_nt = a_l_f
             a12 = a_nl_t * n_ln_t[a_id] + a_nl_nt * n_ln_n_t[a_id] + \
-                a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
+                  a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
             # a12 = a_l_nf * ln_nf[a_id] + a_l_f * p_ln_f
             p_jf.append(a_l_f * p_ln_f / a12)
         return p_jf
@@ -733,6 +791,142 @@ class ParameterExtractor:
     def __init__(self):
         # params = [L0, T, G, S, F]
         self.params_min = [1e-15 for i in range(4)]
+        self.params_max = [1.0, 1.0, 0.3, 0.1]
+
+    def brute_force_params(self, answers, same, grain=100, L0_fix=None,
+                           T_fix=None, G_fix=None, S_fix=None):
+        """
+        Check for every parameter what the best value is.
+
+        if x_fix is None then the whole range will be tested.
+        :param answers: the answers given by the students
+        :param same: Whether the answers are switching to a new student.
+        :param grain: integer defining the amount of values being checked
+        :param L0_fix: integer; value of L0. if None, this will return best L0
+        :param T_fix: integer; value of T. if None, this will return best T
+        :param G_fix: integer; value of G. if None, this will return best G
+        :param S_fix: integer; value of S. if None, this will return best S
+
+        :return: values for L0, T, G and S that result in the lowest SSR.
+        """
+        # set ranges up
+        best_l0 = L0_fix
+        best_t = T_fix
+        best_g = G_fix
+        best_s = S_fix
+        best_SSR = len(answers) * 999999999999991
+        L0_range = self.get_range(L0_fix, 0, grain)
+        T_range = self.get_range(T_fix, 1, grain)
+        G_range = self.get_range(G_fix, 2, grain)
+        S_range = self.get_range(S_fix, 3, grain)
+
+        # Find best values
+        for L0 in L0_range:
+            # print('------------------------------------\nL0 is now at:{}'.format(L0))
+            for T in T_range:
+                for G in G_range:
+                    for S in S_range:
+                        # Get SSR for values
+                        new_SSR = self.get_s_s_r(L0, T, G, S, answers,
+                                                 same)
+
+                        # check whether new value improves old values
+                        if new_SSR <= best_SSR:
+                            best_l0, best_t, best_g, best_s, \
+                                best_SSR = [L0, T, G, S, new_SSR]
+                            # print('best parameters now at L0:{}, ' +
+                            #    'T:{}, G:{}, S:{}'.format(L0,
+                            # 	 T, G, S))
+        return best_l0, best_t, best_g, best_s
+
+    def get_s_s_r(self, L0, T, G, S, answers, sames=None):
+        """
+        Calculate the Sum Squared Residu.
+
+        This is a method that defines the fit of the parameters.
+        :param L0: integer; value of L0
+        :param T: integer; value of T
+        :param G: integer; value of G
+        :param S: integer; value of S
+        :param answers: list of answers given by students
+        :param sames: list of whether the answer is given by the same student.
+        :return: float; Summed squared residu
+        """
+        SSR = 0.0
+        S = max(1E-15, S)
+        T = max(1E-15, T)
+        G = max(1E-15, G)
+        L0 = max(1E-15, L0)
+        L = L0
+        # Make sure that there is a list with sames.
+        if sames is None:
+            sames = np.ones(answers.size)
+            sames[0] = 1
+
+        # for every answer update the SSR.
+        for same, answer in zip(sames, answers):
+            if same == 0:  # New student so reset to initial chance of learning
+                L = L0
+            # print(L, T, G, S, F)
+            SSR += (answer - (L * (1.0 - S) + (1.0 - L) * G)) ** 2
+            if answer == 0:
+                L_given_answer = (L * S) / ((L * S) + ((1.0 - L) * (1.0 - G)))
+            else:
+                L_given_answer = (L * (1.0 - S)) / (
+                    (L * (1.0 - S)) + ((1.0 - L) * G))
+            L = L_given_answer + (1.0 - L_given_answer) * T
+        return SSR
+
+    def get_range(self, possible_range, par_id, grain):
+        """
+        helperfunction to get the range for a parameter based on the grain.
+
+        returns either a list of the whole possible values if that value is
+        not set (possible_range=None) else it returns a list containing only
+        once the value of the set value.
+        :param possible_range: Either float with the preset value or None
+        :param par_id: the id of the parameter to find the boundaries for it.
+        :param grain: integer, how finegrained the range must be.
+        :return:
+        """
+        if possible_range is None:
+            return np.linspace(self.params_min[par_id],
+                               self.params_max[par_id],
+                               int(grain * self.params_max[par_id]),
+                               endpoint=False)[1:]
+        return [possible_range]
+
+    def smart_ssr(self, answers, same, grain, iterations):
+        best_l0 = self.brute_force_params(answers, same, grain,
+                                          None, 0.0, 0.0, 0.0)[0]
+        best_t = self.brute_force_params(answers, same, grain,
+                                         0.0, None, 0.0, 0.0)[1]
+        best_g = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, None, 0.0)[2]
+        best_s = self.brute_force_params(answers, same, grain,
+                                         0.0, 0.0, 0.0, None)[3]
+        for i in range(iterations):
+            print("best is {}".format([best_l0, best_t, best_g, best_s]))
+            best_l0 = self.brute_force_params(answers, same, grain, None,
+                                              best_t, best_g, best_s)[0]
+            best_t = self.brute_force_params(answers, same, grain, best_l0,
+                                             None, best_g, best_s)[1]
+            best_g = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, None, best_s)[2]
+            best_s = self.brute_force_params(answers, same, grain, best_l0,
+                                             best_t, best_g, None)[3]
+        return best_l0, best_t, best_g, best_s
+
+
+class ParameterExtractor_with_forget:
+    """
+    Calculates the pre-calculated parameters.
+
+    Has an option of brute force calculating the parameters or
+    """
+    def __init__(self):
+        # params = [L0, T, G, S, F]
+        self.params_min = [1e-15 for i in range(4)]
         self.params_min.append(0.01)
         self.params_max = [1.0, 1.0, 0.3, 0.1, 0.3]
 
@@ -822,7 +1016,7 @@ class ParameterExtractor:
                 L_given_answer = (L * S) / ((L * S) + ((1.0 - L) * (1.0 - G)))
             else:
                 L_given_answer = (L * (1.0 - S)) / (
-                    (L * (1.0 - S)) + ((1.0 - L) * G))
+                        (L * (1.0 - S)) + ((1.0 - L) * G))
             L = L_given_answer * (1.0 - F_) + (1.0 - L_given_answer) * T
         return SSR
 
@@ -873,15 +1067,10 @@ class ParameterExtractor:
         return best_l0, best_t, best_g, best_s, best_f
 
 
-
-
-
-
-
-if __name__ == "__main__":  # TESTING
-    ex = ParameterExtractor()
+if __name__ == "__main__":  # GETTING PARAMETERS
+    ex = ParameterExtractor_with_forget()
     dh = DataHandler()
-    for loid in np.unique(dh.learn_obj_ids[1:]):
+    for loid in np.unique(dh.learn_obj_ids)[3:]:
         print("getting parameters for goal {}".format(loid))
         dh.set_ps_correct_calc(loid)
         print("Best parameters are {}".format([dh.m2m.p_l0, dh.m2m.p_T,

@@ -115,18 +115,20 @@ class GraphGUI(tk.Tk):
             for user in self.handler.get_users():
                 for learn_obj in np.unique(self.handler.learn_obj_ids)[1:]:
                     # try:
-                        # f = matplotlib.pyplot.figure(figsize=(5, 5), dpi=100)
-                        # axes = matplotlib.pyplot.gca()
+                        f = matplotlib.pyplot.figure(figsize=(5, 5), dpi=100)
+                        axes = matplotlib.pyplot.gca()
                         # axes.set_ylim([-1.15, 1.1])
-                        # a = f.add_subplot(111)
+                        axes.grid(axis="x")
+                        axes.xaxis.set_major_locator(plt.MultipleLocator(1))
+                        a = f.add_subplot(111)
                         graph_n, graph_l, graph_f, o_graph, \
                         split, answers = \
                             self.handler.get_graph_variables(user,
                                                              method=self.method,
                                                              oid=learn_obj,
                                                              saving=True)
-                        # x = [1+i for i in range(len(graph_n))]
-                        # # a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
+                        x = [1+i for i in range(len(graph_l))]
+                        # a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
                         # height = 1.  # max([max(graph_n), max(graph_l)])
                         # low = -1.  # min([min(graph_n), min(graph_l)])
                         # height = height + .05*(height-low)
@@ -138,11 +140,11 @@ class GraphGUI(tk.Tk):
                         #            verticalalignment='center',
                         #            bbox=dict(facecolor='white', edgecolor='white',
                         #                      alpha=1.0))
-                        # # a.plot(x, graph_n,
-                        # #        label="Nieuwe curve", color="black")
-                        # # a.plot(x, graph_l, label="Oude curve",
-                        # #        color="deeppink", dashes=[2, 2])
-                        # a.plot(x, o_graph, label="Oude oude curve",
+                        # a.plot(x, graph_n,
+                        #        label="Nieuwe curve", color="black")
+                        a.plot(x, graph_l, label="Correctness curve",
+                               color="black")
+                        # a.plot(x, o_graph, label="Curve without forget",
                         #        color="cyan")
                         # new_low = -1.1  # low - .1 * (height - low)
                         # new_height = -1.05  # new_low + .05 * (height - low)
@@ -150,8 +152,8 @@ class GraphGUI(tk.Tk):
                         #        [new_height if a == 1 else new_low for a in
                         #         answers],
                         #        color="red", label="Answers")
-                        # # a.legend()
-                        #
+                        # a.legend()
+
                         # boundary_list = self.handler.boundary_list[:]
                         # boundary_list = [1 if q == 0 else q for q in
                         #                  boundary_list]  # To start at 1
@@ -164,14 +166,15 @@ class GraphGUI(tk.Tk):
                         #                   facecolors=c)
                         # fname = 'student {} objective {}.png'.format(user,
                         #                                              learn_obj)
-                        # f.savefig(fname=dirname + fname)
-                        # matplotlib.pyplot.close()
+                        fname = 'correctness objective {}.png'.format(learn_obj)
+                        f.savefig(fname=dirname + fname)
+                        matplotlib.pyplot.close()
                         # print("coordinates are {}".format(graph_n))
-                        # print("saved student {} objective {}".format(user,
-                        #                                              learn_obj))
-                        self.write_spikes(user, learn_obj,
-                                          self.handler.boundary_list,
-                                          o_graph, writer)
+                        print("saved student {} objective {}".format(user,
+                                                                     learn_obj))
+                        # self.write_spikes(user, learn_obj,
+                        #                   self.handler.boundary_list,
+                        #                   o_graph, writer)
 
                     # except Exception as e:
                     #     print("failed saving student {} "

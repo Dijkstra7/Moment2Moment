@@ -1,3 +1,4 @@
+Original:
 a7579
 Best parameters are [0.852, 0.033, 0.299, 0.099, 0.042]
 a7771
@@ -6,6 +7,15 @@ a7789
 Best parameters are [0.091, 0.158, 0.116, 0.099, 0.028]
 a8025
 Best parameters are [0.690, 0.205, 0.112, 0 .099, 0.012]
+
+Without forget:
+    7579    7771    7789    8025
+L0  1,      .001,   .027,   .536
+T   1,      .149,   .059,   .101
+G   .3,     .299,   .250,   .232
+S   .1,     .1,     .1,     .1
+
+
 
 For simone's data:
 a7771
@@ -27,4 +37,57 @@ without F
 L0  .397,   .642,   .919
 T   .095,   .144,   .184
 G   .3,     .117,   .001
-S   3
+S   .1,     .1,     .1
+
+For parameters without pre- and post test:
+With forget
+a7771 Best parameters are
+a7789 Best parameters are
+a8025 Best parameters are
+
+Without forget:
+a7771 Best parameters are [0.94, 0.015, 0.299, 0.099]
+a7789 Best parameters are [0.811, 0.020, 0.299, 0.099]
+a8025 Best parameters are [0.962, 0.056, 0.299, 0.099]
+
+Or also:
+        a7771   a7789   a8025
+  L0
+  T
+  G
+  S
+  F
+
+without F
+    a7771   a7789   a8025
+L0  .940    .811    .962
+T   .015    .020    .056
+G   .3      .3      .3
+S   .1      .1      .1
+
+For parameters without pre- and posttest and classical instruction:
+With forget
+a7771 Best parameters are
+best is [0.983, 0.3200000000000007, 0.299, 0.09900000000000002, 0.02643333333333333]
+a7789 Best parameters are
+a8025 Best parameters are
+
+Without forget:
+a7771 Best parameters are [0.904, 0.002, 0.299, 0.099]
+a7789 Best parameters are [0.738, 0.017, 0.299, 0.099]
+a8025 Best parameters are [0.951, 0.025, 0.299, 0.099]
+
+Or also:
+        a7771   a7789   a8025
+  L0
+  T
+  G
+  S
+  F
+
+without F
+    a7771   a7789   a8025
+L0  .904,    .738,    .951
+T   .002,    .017,    .025
+G   .3,      .3,      .3
+S   .1,      .1,      .1
