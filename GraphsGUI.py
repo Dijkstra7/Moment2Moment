@@ -97,6 +97,51 @@ class GraphGUI(tk.Tk):
                                                                 self.objective_id)
         self.f.savefig(fname=fname)
 
+    def make_long_file(self):
+        dirname = "long_file_graphs"
+        if not os.path.isdir(dirname):
+            os.makedirs(dirname)
+        with open(dirname+"/long_file.csv", 'w', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            header_row = ["Student", "Leerdoel", "voormeting", "instructie",
+                          "non-adaptief", "adaptief na les",
+                          "adaptief herhaling", "nameting", "classification"]
+            writer.writerow(header_row)
+            for user in self.handler.get_users():
+                for obj in np.unique(self.handler.learn_obj_ids)[1:]:
+                    _, _, _, curve, _, _ = self.handler.get_graph_variables(
+                        user, method=self.method, oid=obj, saving=False)
+                    bounds = self.handler.boundary_list[:]
+                    bounds[2] += bounds[0]
+                    writer.writerow([user, obj, *[bounds[i] - bounds[i-1] for
+                                                 i in range(1, len(bounds))],
+                                    self.classify_curve(curve)])
+
+    def classify_curve(self, curve):
+        MINIMUMCHANGE = .015
+        MAXIMUMDISTANCE = 25
+        IMMEDIATEBOUND = 10
+        n_peaks = 0
+        p_peaks = []
+        for point in range(1, len(curve) - 1):
+            if curve[point] > curve[point + 1] + MINIMUMCHANGE and \
+                    curve[
+                        point] > curve[point - 1] + MINIMUMCHANGE:
+                n_peaks += 1
+                p_peaks.append(point)
+        if n_peaks == 1:
+            if p_peaks[0] < IMMEDIATEBOUND:
+                return 2
+            else:
+                return 3
+        else:
+            if n_peaks > 1:
+                if p_peaks[1] < MAXIMUMDISTANCE:
+                    return 4
+                return 5
+            else:
+                return 1
+
     def save_all_graphs(self, dirname='graphs_forgot_learned/'):
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
@@ -384,7 +429,14 @@ class GraphPage(tk.Frame):
                    text='Save all graphs',
                    command=controller.save_all_graphs).grid(row=0,
                                                             column=len(
-                                                                self.methods) + 2)
+                                                                self.methods)
+                                                                       + 2)
+        ttk.Button(method_frame, text="make long file",
+                   command=controller.make_long_file).grid(row=0,
+                                                           column=len(
+                                                                self.methods)
+                                                                       + 3)
+
         method_frame.pack()
 
         canvas = FigureCanvasTkAgg(controller.f, self)

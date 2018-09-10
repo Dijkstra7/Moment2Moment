@@ -37,9 +37,9 @@ class DataHandler:
         self.ss = [0.1, 0.1, 0.1, 0.1]
         self.fs = [0.042, 0.064, 0.028, 0.012]
 
-        self.ol0s = [1, .904,    .738,    .951]  # From bruteforceparameters
-        self.ots = [1, .002,    .017,    .025]
-        self.ogs = [.3, 0.299, 0.299, 0.299]
+        self.ol0s = [1, 0.001, .027, 0.536]  # From bruteforceparameters
+        self.ots = [1, 0.149, .059, 0.101]
+        self.ogs = [.3, 0.299, 0.250, 0.232]
         self.oss = [0.1, 0.1, 0.1, 0.1]
 
         self.count_exercises = {}
@@ -64,7 +64,7 @@ class DataHandler:
             while fname[-1] != '.':
                 fname = fname[:-1]
             fname = fname.split('/')[-1] + "pkl"
-            self.max_row = 16384  # self.get_max_row()
+            self.max_row = 17072  # self.get_max_row()
             try:
                 print("Trying to open {}".format(fname))
                 self.dates, self.times, self.user_ids, self.learn_obj_ids, \
@@ -120,7 +120,7 @@ class DataHandler:
             if color != '00000000':
                 return i
 
-    def get_column(self, cid, start_row=8, end_row=None):
+    def get_column(self, cid, start_row=2, end_row=None):
         """
         Get the values of a certain column.
 
@@ -219,7 +219,7 @@ class DataHandler:
                       2151774, 1683854, 1683859, 1683868, 1683947, 1683951,
                       1683954, 1684039, 1684040, 1684029, 1684031, 1684032,
                       1684033, 1684034, 1684035, 1684036, 1684038, 1684041,
-                      1684042, 1684064,  1684066, 2151775, 1686784, 1686785,
+                      1684042, 1684064, 1684066, 2151775, 1686784, 1686785,
                       1686786, 1686787, 1686788, 1686789, 1686790, 1686791,
                       1686792, 1686793, 1686767, 1686769, 1686771, 1686772,
                       1686774, 1686775, 1686781, 1686776]
@@ -261,8 +261,8 @@ class DataHandler:
                 sames.append(0)
             answers.append(self.corrects[nextl])
         l, t, g, s = ParameterExtractor().smart_ssr(answers,
-                                                                     sames,
-                                                                     1000, 10)
+                                                    sames,
+                                                    1000, 10)
         # self.m2m.set_ps(l, t, g, s, f)
 
     def set_ps_correct(self, oid):
@@ -412,12 +412,13 @@ class MomentByMoment:
         # Store the exercises.
         self.excs = user_excs
         self.dats = user_dates
+        self.objective = user_objectives[0]
 
         # bounds, _ = self.get_color_bars()
         # user_answers = user_answers[bounds[2]:bounds[-2]]
         # user_abs = user_answers[bounds[2]:bounds[-2]]
 
-        if len(user_abs)<1:
+        if len(user_abs) < 1:
             return user_answers, (None, '')
         split = -1
         while user_abs[split + 1] == 'NULL' and split < len(user_abs) - 2:
@@ -632,7 +633,9 @@ class MomentByMoment:
         # TODO: Update logic here
         excs = self.excs
         dats = self.dats
-
+        loidx = [8025, 7789, 7771].index(self.objective)
+        ptids = self.handler.post_ids[8*loidx:8+8*loidx]
+        print(ptids)
         bounds = [0, 0, 0, 0, 0, 0, 0]
         colors = ['royalblue', 'darkorange', 'silver', 'gold', 'mediumblue',
                   'olivedrab']
@@ -643,31 +646,36 @@ class MomentByMoment:
         # print(e)
         try:
             e = excs[0]
-            print(e)
-            if excs[1] in self.handler.pre_ids:
-                while e in self.handler.pre_ids:
-                    bounds = [bounds[i] + 1 if i > 0 else bounds[i] for i in
-                              range(len(bounds))]
-                    if saving:
-                        if e in self.count_exercises:
-                            self.count_exercises[e]["total"] += 1
-                            self.count_exercises[e]["pre"] += 1
-                        else:
-                            self.count_exercises[e] = {"total": 1,
-                                                       "pre": 1,
-                                                       "instr": 0,
-                                                       "exerc": 0,
-                                                       "cladap": 0,
-                                                       "indadap": 0,
-                                                       "post": 0}
-                    excs = excs[1:]
-                    dats = dats[1:]
-                    e = excs[0]
-
+            if e == 2151774:  # Students opening wrong file
+                e = excs[1]
+                bounds[0] = 1
+            while e in self.handler.pre_ids:
+                if e in ptids:
+                    ptids.remove(e)
+                    print(ptids)
+                bounds = [bounds[i] + 1 if i > 0 else bounds[i] for i in
+                          range(len(bounds))]
+                if saving:
+                    if e in self.count_exercises:
+                        self.count_exercises[e]["total"] += 1
+                        self.count_exercises[e]["pre"] += 1
+                    else:
+                        self.count_exercises[e] = {"total": 1,
+                                                   "pre": 1,
+                                                   "instr": 0,
+                                                   "exerc": 0,
+                                                   "cladap": 0,
+                                                   "indadap": 0,
+                                                   "post": 0}
+                excs = excs[1:]
+                dats = dats[1:]
+                e = excs[0]
             d = dats[0]
             # Find class instruction
             # print('finding instruction exercises')
             while e in self.handler.c_in_ids:
+                if e in ptids:
+                    ptids.remove(e)
                 bounds = [bounds[i] + 1 if i > 1 else bounds[i] for i in
                           range(len(bounds))]
                 if saving:
@@ -689,6 +697,8 @@ class MomentByMoment:
             # Find class exercise
             # print('finding class exercises')
             while e in self.handler.c_ex_ids:
+                if e in ptids:
+                    ptids.remove(e)
                 bounds = [bounds[i] + 1 if i > 2 else bounds[i] for i in
                           range(len(bounds))]
                 if saving:
@@ -714,6 +724,9 @@ class MomentByMoment:
                     and not e == self.excs[0] \
                     and not (bounds[1] == bounds[2]
                              and bounds[2] == bounds[3]):
+                if e in ptids:
+                    ptids.remove(e)
+                    print(ptids)
                 bounds = [bounds[i] + 1 if i > 3 else bounds[i] for i in
                           range(len(bounds))]
                 if saving:
@@ -735,35 +748,55 @@ class MomentByMoment:
             # Find repetition adaptive and post test boundary
             # Done by finding all post-test exercises backwards.
             # print('finding repeated adaptive exercises')
-            excs = excs[::-1]
-            dats = dats[::-1]
-            bounds[-1] = len(self.excs)
-            bounds[-2] = bounds[-1]
-            d = dats[0]
-            found_post = False
-            while dats[0].strftime("%d") == d.strftime("%d"):
-                bounds[-2] -= 1
-                if excs[0] in self.handler.post_ids:
-                    found_post = True
-                if saving:
-                    e = excs[0]
-                    if e in self.count_exercises:
-                        self.count_exercises[e]["total"] += 1
-                        self.count_exercises[e]["post"] += 1
+            not_yet = True  # Whether we are at post-testing
+            while not_yet is True and len(excs) > 1:
+                bounds = [bounds[i] + 1 if i > 4 else bounds[i] for i in
+                          range(len(bounds))]
+                if e in ptids:
+                    leftover_ptids=ptids[:]
+                    removed_ptids = []
+                    print(ptids)
+                    while e in ptids and len(ptids) > 1 and len(excs)>1:
+                        print(e, len(ptids))
+                        excs = excs[1:]
+                        removed_ptids.append(e)
+                        ptids.remove(e)
+                        e = excs[0]
+                    print("Lenght is {}".format(len(ptids)), len(excs))
+                    if (len(ptids) == 1 and e == ptids[0]) or len(excs) == 1:
+                        not_yet = False
+                        print("Should save")
+                        bounds[-1] += len(leftover_ptids)
+                        if saving:
+                            for e in removed_ptids:
+                                if e in self.count_exercises:
+                                    self.count_exercises[e]["total"] += 1
+                                    self.count_exercises[e]["post"] += 1
+                                else:
+                                    self.count_exercises[e] = {"total": 1,
+                                                               "pre": 0,
+                                                               "instr": 0,
+                                                               "exerc": 0,
+                                                               "cladap": 0,
+                                                               "indadap": 0,
+                                                               "post": 1}
                     else:
-                        self.count_exercises[e] = {"total": 1,
-                                                   "pre": 0,
-                                                   "instr": 0,
-                                                   "exerc": 0,
-                                                   "cladap": 0,
-                                                   "indadap": 0,
-                                                   "post": 1}
-                excs = excs[1:]
-                dats = dats[1:]
-            if found_post is False:
-                bounds[-2] = bounds[-1]
+                        if e in ptids:
+                            ptids.remove(e)
+                        if saving:
+                            for e in removed_ptids:
+                                if e in self.count_exercises:
+                                    self.count_exercises[e]["total"] += 1
+                                    self.count_exercises[e]["indadap"] += 1
+                                else:
+                                    self.count_exercises[e] = {"total": 1,
+                                                               "pre": 0,
+                                                               "instr": 0,
+                                                               "exerc": 0,
+                                                               "cladap": 0,
+                                                               "indadap": 1,
+                                                               "post": 0}
 
-            for e in excs:
                 if saving:
                     if e in self.count_exercises:
                         self.count_exercises[e]["total"] += 1
@@ -776,6 +809,8 @@ class MomentByMoment:
                                                    "cladap": 0,
                                                    "indadap": 1,
                                                    "post": 0}
+                excs = excs[1:]
+                e = excs[0]
         except IndexError:
             pass
         print(bounds)
@@ -788,9 +823,10 @@ class ParameterExtractor:
 
     Has an option of brute force calculating the parameters or
     """
+
     def __init__(self):
         # params = [L0, T, G, S, F]
-        self.params_min = [1e-15 for i in range(4)]
+        self.params_min = [1e-15]*4
         self.params_max = [1.0, 1.0, 0.3, 0.1]
 
     def brute_force_params(self, answers, same, grain=100, L0_fix=None,
@@ -833,7 +869,7 @@ class ParameterExtractor:
                         # check whether new value improves old values
                         if new_SSR <= best_SSR:
                             best_l0, best_t, best_g, best_s, \
-                                best_SSR = [L0, T, G, S, new_SSR]
+                            best_SSR = [L0, T, G, S, new_SSR]
                             # print('best parameters now at L0:{}, ' +
                             #    'T:{}, G:{}, S:{}'.format(L0,
                             # 	 T, G, S))
@@ -873,7 +909,7 @@ class ParameterExtractor:
                 L_given_answer = (L * S) / ((L * S) + ((1.0 - L) * (1.0 - G)))
             else:
                 L_given_answer = (L * (1.0 - S)) / (
-                    (L * (1.0 - S)) + ((1.0 - L) * G))
+                        (L * (1.0 - S)) + ((1.0 - L) * G))
             L = L_given_answer + (1.0 - L_given_answer) * T
         return SSR
 
@@ -924,6 +960,7 @@ class ParameterExtractor_with_forget:
 
     Has an option of brute force calculating the parameters or
     """
+
     def __init__(self):
         # params = [L0, T, G, S, F]
         self.params_min = [1e-15 for i in range(4)]
