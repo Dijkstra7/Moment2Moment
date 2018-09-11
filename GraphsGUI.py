@@ -103,9 +103,9 @@ class GraphGUI(tk.Tk):
             os.makedirs(dirname)
         with open(dirname+"/long_file.csv", 'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
-            header_row = ["Student", "Leerdoel", "voormeting", "instructie",
-                          "non-adaptief", "adaptief na les",
-                          "adaptief herhaling", "nameting", "classification"]
+            header_row = ["Student", "Leerdoel"]
+            for i in range(1, 7):
+                header_row.append(i)
             writer.writerow(header_row)
             for user in self.handler.get_users():
                 for obj in np.unique(self.handler.learn_obj_ids)[1:]:
@@ -129,6 +129,7 @@ class GraphGUI(tk.Tk):
                         point] > curve[point - 1] + MINIMUMCHANGE:
                 n_peaks += 1
                 p_peaks.append(point)
+
         if n_peaks == 1:
             if p_peaks[0] < IMMEDIATEBOUND:
                 return 2
@@ -136,11 +137,14 @@ class GraphGUI(tk.Tk):
                 return 3
         else:
             if n_peaks > 1:
-                if p_peaks[1] < MAXIMUMDISTANCE:
+                if n_peaks == 2:
+                    return 6
+                if p_peaks[-1] < MAXIMUMDISTANCE:
                     return 4
                 return 5
             else:
                 return 1
+
 
     def save_all_graphs(self, dirname='graphs_forgot_learned/'):
         if not os.path.isdir(dirname):
