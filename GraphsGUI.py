@@ -103,8 +103,8 @@ class GraphGUI(tk.Tk):
             os.makedirs(dirname)
         with open(dirname+"/long_file.csv", 'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
-            header_row = ["Student", "Leerdoel"]
-            for i in range(1, 7):
+            header_row = []
+            for i in range(1, 31):
                 header_row.append(i)
             writer.writerow(header_row)
             for user in self.handler.get_users():
@@ -113,9 +113,16 @@ class GraphGUI(tk.Tk):
                         user, method=self.method, oid=obj, saving=False)
                     bounds = self.handler.boundary_list[:]
                     bounds[2] += bounds[0]
-                    writer.writerow([user, obj, *[bounds[i] - bounds[i-1] for
-                                                 i in range(1, len(bounds))],
-                                    self.classify_curve(curve)])
+                    self.make_long_file_row(user, obj, bounds, curve, writer)
+
+    def make_long_file_row(self, user, obj, bounds, curve, writer):
+        writer.writerow([user, obj, *[bounds[i] - bounds[i - 1] for
+                                      i in range(1, len(bounds))],
+                         self.classify_curve(curve),
+                         self.last_peak,
+                         *self.write_spikes(user, obj,
+                                            bounds, curve)
+                         ])
 
     def classify_curve(self, curve):
         MINIMUMCHANGE = .015
@@ -129,7 +136,10 @@ class GraphGUI(tk.Tk):
                         point] > curve[point - 1] + MINIMUMCHANGE:
                 n_peaks += 1
                 p_peaks.append(point)
-
+        if len(p_peaks) > 1:
+            self.last_peak = p_peaks[-1]
+        else:
+            self.last_peak = None
         if n_peaks == 1:
             if p_peaks[0] < IMMEDIATEBOUND:
                 return 2
@@ -145,20 +155,14 @@ class GraphGUI(tk.Tk):
             else:
                 return 1
 
-
-    def save_all_graphs(self, dirname='graphs_forgot_learned/'):
+    def save_all_graphs(self, dirname='graphs/'):
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
-        with open(dirname+'spikes_015.csv', 'w', newline='') as csv_file:
+        with open(dirname+'long_file.csv', 'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
-            cat = ["Spikiness", "Peaks", "Transitional peaks"]
-            kind = ["in general", "voormeting", "instructie",
-                    "non-adaptief", "adaptief na les",
-                    "adaptief herhaling", "nameting"]
-            header_row = ["Student", "Leerdoel"]
-            for c in cat:
-                for k in kind:
-                    header_row.append(c+" "+k)
+            header_row = []
+            for i in range(1, 32):
+                header_row.append(str(i))
             writer.writerow(header_row)
             errors = 0
             for user in self.handler.get_users():
@@ -166,9 +170,9 @@ class GraphGUI(tk.Tk):
                     # try:
                         f = matplotlib.pyplot.figure(figsize=(5, 5), dpi=100)
                         axes = matplotlib.pyplot.gca()
-                        # axes.set_ylim([-1.15, 1.1])
-                        axes.grid(axis="x")
-                        axes.xaxis.set_major_locator(plt.MultipleLocator(1))
+                        axes.set_ylim([-1.15, 1.1])
+                        # axes.grid(axis="x")  # make stripes in axis
+                        # axes.xaxis.set_major_locator(plt.MultipleLocator(1))
                         a = f.add_subplot(111)
                         graph_n, graph_l, graph_f, o_graph, \
                         split, answers = \
@@ -176,11 +180,11 @@ class GraphGUI(tk.Tk):
                                                              method=self.method,
                                                              oid=learn_obj,
                                                              saving=True)
-                        x = [1+i for i in range(len(graph_l))]
+                        x = [1+i for i in range(len(o_graph))]
                         # a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
-                        # height = 1.  # max([max(graph_n), max(graph_l)])
-                        # low = -1.  # min([min(graph_n), min(graph_l)])
-                        # height = height + .05*(height-low)
+                        height = 1.  # max([max(graph_n), max(graph_l)])
+                        low = -1.  # min([min(graph_n), min(graph_l)])
+                        height = height + .05*(height-low)
                         # a.plot([split[0], split[0]], [low, height], color="black")
                         # if split[0] is not None:
                         #     a.text(max(split[0], len(graph_n)/50), height,
@@ -191,39 +195,37 @@ class GraphGUI(tk.Tk):
                         #                      alpha=1.0))
                         # a.plot(x, graph_n,
                         #        label="Nieuwe curve", color="black")
-                        a.plot(x, graph_l, label="Correctness curve",
-                               color="black")
-                        # a.plot(x, o_graph, label="Curve without forget",
-                        #        color="cyan")
-                        # new_low = -1.1  # low - .1 * (height - low)
-                        # new_height = -1.05  # new_low + .05 * (height - low)
-                        # a.plot(range(1, len(answers)+1),
-                        #        [new_height if a == 1 else new_low for a in
-                        #         answers],
-                        #        color="red", label="Answers")
-                        # a.legend()
+                        # a.plot(x, graph_l, label="Correctness curve",
+                        #        color="black")
+                        a.plot(x, o_graph, label="Curve", color="cyan")
+                        new_low = -1.1  # low - .1 * (height - low)
+                        new_height = -1.05  # new_low + .05 * (height - low)
+                        a.plot(range(1, len(answers)+1),
+                               [new_height if a == 1 else new_low for a in
+                                answers],
+                               color="red", label="Answers")
+                        a.legend()
 
-                        # boundary_list = self.handler.boundary_list[:]
-                        # boundary_list = [1 if q == 0 else q for q in
-                        #                  boundary_list]  # To start at 1
-                        # color_list = self.handler.color_list[:len(boundary_list) - 1]
-                        # for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
-                        #                      color_list):
-                        #     a.broken_barh([(b1, b2 - b1)],
-                        #                   (low + .25 * (height - low),
-                        #                    .5 * (height - low)),
-                        #                   facecolors=c)
-                        # fname = 'student {} objective {}.png'.format(user,
-                        #                                              learn_obj)
-                        fname = 'correctness objective {}.png'.format(learn_obj)
+                        boundary_list = self.handler.boundary_list[:]
+                        boundary_list = [1 if q == 0 else q for q in
+                                         boundary_list]  # To start at 1
+                        color_list = self.handler.color_list[:len(boundary_list) - 1]
+                        for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
+                                             color_list):
+                            a.broken_barh([(b1, b2 - b1)],
+                                          (low + .25 * (height - low),
+                                           .5 * (height - low)),
+                                          facecolors=c)
+                        fname = 'student {} objective {}.png'.format(user,
+                                                                     learn_obj)
+                        # fname = 'correctness objective {}.png'.format(learn_obj)
                         f.savefig(fname=dirname + fname)
                         matplotlib.pyplot.close()
                         # print("coordinates are {}".format(graph_n))
                         print("saved student {} objective {}".format(user,
                                                                      learn_obj))
-                        # self.write_spikes(user, learn_obj,
-                        #                   self.handler.boundary_list,
-                        #                   o_graph, writer)
+                        self.make_long_file_row(user, learn_obj,
+                                                boundary_list, o_graph, writer)
 
                     # except Exception as e:
                     #     print("failed saving student {} "
@@ -242,7 +244,7 @@ class GraphGUI(tk.Tk):
                              val["post"]])
 
 
-    def write_spikes(self, student, loid, bounds, graph, writer):
+    def write_spikes(self, student, loid, bounds, graph):
         row = [str(student), str(loid)]
         n_peaks, peak_per_bound, trans_peak = self.calc_peaks(graph, bounds)
         print("`1")
@@ -269,7 +271,7 @@ class GraphGUI(tk.Tk):
                 row.append("NaN")
 
         # Write results
-        writer.writerow(row)
+        return row[2:]
 
     def calc_peaks(self, graph, bounds):
         locs = []
@@ -297,9 +299,11 @@ class GraphGUI(tk.Tk):
             j = graph[i]
             n = graph[i+1]
             if i+2 > bounds[bound+1]:
-                while i+2 > bounds[bound+1]:
+                while i+2 > bounds[bound+1] and bound < 5:
                     bound += 1
-                    # print("Bound is now at {}".format(bound))
+                    if bound > 5:
+                        print(i)
+                    print("Bound is now at {}".format(bound))
                 if (j > old_j+m_s) and (j > n+m_s):
                     # print("Peak, plus transition at position {}".format(i))
                     locs.append(i)

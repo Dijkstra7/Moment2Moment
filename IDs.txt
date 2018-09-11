@@ -1,0 +1,31 @@
+1  Student
+2  Leerdoel
+3  Opgaven in Pre-test
+4  Opgaven in Guided Practice
+5  Opgaven in Non-adaptive practice
+6  Opgaven in Adaptive practice
+7  Opgaven in Repeated adaptive practice
+8  Opgaven in Post test
+9  Type curve (1=imm. drop; 2=imm. peak; 3=single peak; 4=close mult. peaks; 5=sep mult. peaks; 6=double peaks)
+10 Location last curve
+11 Spikiness in general
+12 Spikiness voormeting
+13 Spikiness instructie
+14 Spikiness non-adaptief
+15 Spikiness adaptief na les
+16 Spikiness adaptief herhaling
+17 Spikiness nameting
+18 Peaks in general
+19 Peaks voormeting
+20 Peaks instructie
+21 Peaks non-adaptief
+22 Peaks adaptief na les
+23 Peaks adaptief herhaling
+24 Peaks nameting
+25 Transitional peaks in general
+26 Transitional peaks voormeting
+27 Transitional peaks instructie
+28 Transitional peaks non-adaptief
+29 Transitional peaks adaptief na les
+30 Transitional peaks adaptief herhaling
+31 Transitional peaks nameting
