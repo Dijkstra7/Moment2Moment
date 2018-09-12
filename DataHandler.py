@@ -118,7 +118,7 @@ class DataHandler:
             # Find the color of the cell.
             color = self.ws.cell(row=i, column=column).fill.start_color.index
             if color != '00000000':
-                return i
+                return i+1
 
     def get_column(self, cid, start_row=2, end_row=None):
         """
@@ -678,6 +678,7 @@ class MomentByMoment:
                     ptids.remove(e)
                 bounds = [bounds[i] + 1 if i > 1 else bounds[i] for i in
                           range(len(bounds))]
+                print(e, bounds)
                 if saving:
                     if e in self.count_exercises:
                         self.count_exercises[e]["total"] += 1
@@ -749,9 +750,12 @@ class MomentByMoment:
             # Done by finding all post-test exercises backwards.
             # print('finding repeated adaptive exercises')
             not_yet = True  # Whether we are at post-testing
+            bounds = [bounds[i] - 1 if i > 4 else bounds[i] for i in
+                      range(len(bounds))]
             while not_yet is True and len(excs) > 1:
                 bounds = [bounds[i] + 1 if i > 4 else bounds[i] for i in
                           range(len(bounds))]
+                print(bounds)
                 if e in ptids:
                     leftover_ptids=ptids[:]
                     removed_ptids = []
@@ -766,7 +770,7 @@ class MomentByMoment:
                     if (len(ptids) == 1 and e == ptids[0]) or len(excs) == 1:
                         not_yet = False
                         print("Should save")
-                        bounds[-1] += len(leftover_ptids)
+                        bounds[-1] += len(removed_ptids) + 1
                         if saving:
                             for e in removed_ptids:
                                 if e in self.count_exercises:
@@ -781,6 +785,8 @@ class MomentByMoment:
                                                                "indadap": 0,
                                                                "post": 1}
                     else:
+                        bounds = [bounds[i] + len(removed_ptids) if i > 4
+                                  else bounds[i] for i in range(len(bounds))]
                         if e in ptids:
                             ptids.remove(e)
                         if saving:

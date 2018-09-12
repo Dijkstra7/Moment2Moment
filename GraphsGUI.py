@@ -295,11 +295,12 @@ class GraphGUI(tk.Tk):
             trans_peak[bound] = 1
 
         # middle answers
-        for i in range(1, len(graph)-1):
+        for i in range(1, bounds[-1]-2-1):
+            print(i)
             j = graph[i]
             n = graph[i+1]
             if i+2 > bounds[bound+1]:
-                while i+2 > bounds[bound+1] and bound < 5:
+                while i+2 > bounds[bound+1]:
                     bound += 1
                     if bound > 5:
                         print(i)
