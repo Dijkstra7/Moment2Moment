@@ -35,6 +35,28 @@ class GraphGUI(tk.Tk):
             new_frame.grid(row=0, column=0, sticky='nsew')
         self.show_frame(GraphPage)
         self.method = 'all'
+        self.header_row = ["student", "leerdoel", "aantal_opgaven_pre-test",
+                           "aantal_opgaven_guided_practice",
+                           "aantal_opgaven_non-adaptive_practice",
+                           "aantal_opgaven_adaptive_practice",
+                           "aantal_opgaven_repeated_adaptive_practice",
+                           "aantal_opgaven_posttest", "curve_type",
+                           "fase_last_peak", "spikiness_in_general",
+                           "spikiness_pre-test", "spikiness_guided_practice",
+                           "spikiness_non-adaptive_practice",
+                           "spikiness_adaptive_practice",
+                           "spikiness_repeated_adaptive_practice",
+                           "spikiness_post-test", "peaks_in_total",
+                           "peaks_pre-test", "peaks_guided_practice",
+                           "peaks_non-adaptive_practice",
+                           "peaks_adaptive_practice",
+                           "peaks_repeated_adaptive_practice",
+                           "peaks_post-test", "transition_peaks_total",
+                           "transition_peaks_before_guided_practice",
+                           "transition_peaks_before_non-adaptive_practice",
+                           "transition_peaks_before_adaptive_practive",
+                           "transition_peaks_before_repeated_adaptive_practice",
+                           "transition_peaks_before_post-test"]
 
     def show_frame(self, cont):
         frame = self.frames[cont]
@@ -44,17 +66,21 @@ class GraphGUI(tk.Tk):
         # cmap = plt.get_cmap('cool')
         graph_n, graph_l, graph_f, o_graph, split, answers = \
             self.handler.get_graph_variables(
-            self.user_id, method=self.method, oid=self.objective_id)
+                self.user_id, method=self.method, oid=self.objective_id)
         t_list = self.handler.get_graph_variables(self.user_id,
-                                                        method=self.method,
-                                                        oid=self.objective_id)
+                                                  method=self.method,
+                                                  oid=self.objective_id)
         self.a.clear()
-        self.a.plot(range(len(graph_n)), graph_n, label="P(Jn)")
+        # self.a.plot(range(len(graph_n)), graph_n, label="P(Jn)")
         # self.a.plot(range(len(graph_n)), graph_l, label="P(Jl)")
-        self.a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
+        self.a.plot(range(1, len(o_graph) + 1), o_graph, label="Curve")
         self.a.plot(range(len(answers)), answers, label="Answers")
+        # try:
         height = max(max(graph_n), max(graph_l), max(graph_f))
         low = min(min(graph_n), min(graph_l), min(graph_f))
+        # except ValueError:
+        #     height = 1.1
+        #     low = -1.
         self.a.legend()
         self.a.plot([split[0], split[0]], [low, height], color="black")
         self.a.text(split[0], height, str(split[1]),
@@ -67,8 +93,8 @@ class GraphGUI(tk.Tk):
         for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
                              color_list):
             self.a.broken_barh([(b1, b2 - b1)],
-                               (low + .15 * (height-low), height - .15 * (
-                                       height-low)),
+                               (low + .15 * (height - low), height - .15 * (
+                                       height - low)),
                                facecolors=c)
         print(o_graph)
 
@@ -101,13 +127,17 @@ class GraphGUI(tk.Tk):
         dirname = "long_file_graphs"
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
-        with open(dirname+"/long_file.csv", 'w', newline='') as csv_file:
+        with open(dirname + "/long_file.csv", 'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
             header_row = []
-            for i in range(1, 31):
+            for i in self.header_row:
                 header_row.append(i)
             writer.writerow(header_row)
             for user in self.handler.get_users():
+                SKIPSTUDENTS = ["2014", "2019", "2091"]
+                if str(user) in SKIPSTUDENTS:
+                    print("SKIP STUDENT {}".format(user))
+                    continue
                 for obj in np.unique(self.handler.learn_obj_ids)[1:]:
                     _, _, _, curve, _, _ = self.handler.get_graph_variables(
                         user, method=self.method, oid=obj, saving=False)
@@ -119,10 +149,20 @@ class GraphGUI(tk.Tk):
         writer.writerow([user, obj, *[bounds[i] - bounds[i - 1] for
                                       i in range(1, len(bounds))],
                          self.classify_curve(curve),
-                         self.last_peak,
+                         self.get_fase(self.last_peak, bounds),
                          *self.write_spikes(user, obj,
                                             bounds, curve)
                          ])
+
+    def get_fase(self, last_peak, bounds):
+        if last_peak is None:
+            return None
+        for bound in bounds:
+            if bound is None:
+                continue
+            if last_peak < bound:
+                return bounds.index(bound)
+
 
     def classify_curve(self, curve):
         MINIMUMCHANGE = .015
@@ -136,8 +176,8 @@ class GraphGUI(tk.Tk):
                         point] > curve[point - 1] + MINIMUMCHANGE:
                 n_peaks += 1
                 p_peaks.append(point)
-        if len(p_peaks) > 1:
-            self.last_peak = p_peaks[-1]
+        if len(p_peaks) > 0:
+            self.last_peak = p_peaks[-1] + 1
         else:
             self.last_peak = None
         if n_peaks == 1:
@@ -158,80 +198,88 @@ class GraphGUI(tk.Tk):
     def save_all_graphs(self, dirname='graphs/'):
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
-        with open(dirname+'long_file.csv', 'w', newline='') as csv_file:
+        with open(dirname + 'long_file.csv', 'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
             header_row = []
-            for i in range(1, 32):
+            for i in self.header_row:
                 header_row.append(str(i))
             writer.writerow(header_row)
             errors = 0
             for user in self.handler.get_users():
+                SKIPSTUDENTS = ["2014", "2019", "2091"]
+                if str(user) in SKIPSTUDENTS:
+                    print("SKIP STUDENT {}".format(user))
+                    continue
                 for learn_obj in np.unique(self.handler.learn_obj_ids)[1:]:
                     # try:
-                        f = matplotlib.pyplot.figure(figsize=(5, 5), dpi=100)
-                        axes = matplotlib.pyplot.gca()
-                        axes.set_ylim([-1.15, 1.1])
-                        # axes.grid(axis="x")  # make stripes in axis
-                        # axes.xaxis.set_major_locator(plt.MultipleLocator(1))
-                        a = f.add_subplot(111)
-                        graph_n, graph_l, graph_f, o_graph, \
-                        split, answers = \
-                            self.handler.get_graph_variables(user,
-                                                             method=self.method,
-                                                             oid=learn_obj,
-                                                             saving=True)
-                        x = [1+i for i in range(len(o_graph))]
-                        # a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
-                        height = 1.  # max([max(graph_n), max(graph_l)])
-                        low = -1.  # min([min(graph_n), min(graph_l)])
-                        height = height + .05*(height-low)
-                        # a.plot([split[0], split[0]], [low, height], color="black")
-                        # if split[0] is not None:
-                        #     a.text(max(split[0], len(graph_n)/50), height,
-                        #            str(split[1]),
-                        #            horizontalalignment='center',
-                        #            verticalalignment='center',
-                        #            bbox=dict(facecolor='white', edgecolor='white',
-                        #                      alpha=1.0))
-                        # a.plot(x, graph_n,
-                        #        label="Nieuwe curve", color="black")
-                        # a.plot(x, graph_l, label="Correctness curve",
-                        #        color="black")
-                        a.plot(x, o_graph, label="Curve", color="cyan")
-                        new_low = -1.1  # low - .1 * (height - low)
-                        new_height = -1.05  # new_low + .05 * (height - low)
-                        a.plot(range(1, len(answers)+1),
-                               [new_height if a == 1 else new_low for a in
-                                answers],
-                               color="red", label="Answers")
-                        a.legend()
+                    f = matplotlib.pyplot.figure(figsize=(5, 5), dpi=100)
+                    axes = matplotlib.pyplot.gca()
+                    axes.set_ylim([-1.15, 1.1])
 
-                        boundary_list = self.handler.boundary_list[:]
-                        boundary_list = [1 if q == 0 else q for q in
-                                         boundary_list]  # To start at 1
-                        color_list = self.handler.color_list[:len(boundary_list) - 1]
-                        for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
-                                             color_list):
-                            a.broken_barh([(b1, b2 - b1)],
-                                          (low + .25 * (height - low),
-                                           .5 * (height - low)),
-                                          facecolors=c)
-                        fname = 'student {} objective {}.png'.format(user,
-                                                                     learn_obj)
-                        # fname = 'correctness objective {}.png'.format(learn_obj)
-                        f.savefig(fname=dirname + fname)
-                        matplotlib.pyplot.close()
-                        # print("coordinates are {}".format(graph_n))
-                        print("saved student {} objective {}".format(user,
-                                                                     learn_obj))
-                        self.make_long_file_row(user, learn_obj,
-                                                boundary_list, o_graph, writer)
+                    # axes.grid(axis="x")  # make stripes in axis
+                    # axes.xaxis.set_major_locator(plt.MultipleLocator(1))
 
-                    # except Exception as e:
-                    #     print("failed saving student {} "
-                    #           "objective {} because of {}".format(user, learn_obj,
-                    #                                               e))
-                    #     errors += 1
+                    a = f.add_subplot(111)
+                    graph_n, graph_l, graph_f, o_graph, \
+                    split, answers = \
+                        self.handler.get_graph_variables(user,
+                                                         method=self.method,
+                                                         oid=learn_obj,
+                                                         saving=True)
+                    x = [1 + i for i in range(len(o_graph))]
+                    # a.plot(range(len(graph_n)), graph_f, label="P(Jf)")
+                    height = 1.  # max([max(graph_n), max(graph_l)])
+                    low = -1.  # min([min(graph_n), min(graph_l)])
+                    height = height + .05 * (height - low)
+                    # a.plot([split[0], split[0]], [low, height], color="black")
+                    # if split[0] is not None:
+                    #     a.text(max(split[0], len(graph_n)/50), height,
+                    #            str(split[1]),
+                    #            horizontalalignment='center',
+                    #            verticalalignment='center',
+                    #            bbox=dict(facecolor='white', edgecolor='white',
+                    #                      alpha=1.0))
+                    # a.plot(x, graph_n,
+                    #        label="Nieuwe curve", color="black")
+                    # a.plot(x, graph_l, label="Correctness curve",
+                    #        color="black")
+                    a.plot(x, o_graph, label="Curve", color="cyan")
+                    new_low = -1.1  # low - .1 * (height - low)
+                    new_height = -1.05  # new_low + .05 * (height - low)
+                    a.plot(range(1, len(answers) + 1),
+                           [new_height if a == 1 else new_low for a in
+                            answers],
+                           color="red", label="Answers")
+                    a.legend()
+
+                    boundary_list = self.handler.boundary_list[:]
+                    boundary_list = [1 if q == 0 else q for q in
+                                     boundary_list]  # To start at 1
+                    color_list = self.handler.color_list[
+                                 :len(boundary_list) - 1]
+                    for b1, b2, c in zip(boundary_list[:-1], boundary_list[1:],
+                                         color_list):
+                        a.broken_barh([(b1, b2 - b1)],
+                                      (low + .25 * (height - low),
+                                       .5 * (height - low)),
+                                      facecolors=c)
+                    fname = 'student {} objective {}.png'.format(user,
+                                                                 learn_obj)
+                    # fname = 'correctness objective {}.png'.format(learn_obj)
+                    f.suptitle(fname[:-4])
+                    f.savefig(fname=dirname + fname)
+                    matplotlib.pyplot.close()
+                    # print("coordinates are {}".format(graph_n))
+                    print("saved student {} objective {}".format(user,
+                                                                 learn_obj))
+                    self.make_long_file_row(user, learn_obj,
+                                            boundary_list, o_graph, writer)
+
+                # except Exception as e:
+                #     print("failed saving student {} "
+                #           "objective {} because of {}".format(user, learn_obj,
+                #                                               e))
+                #     errors += 1
             # self.write_exercise_ids(
             #     self.handler.m2m.count_exercises, writer)
             print("saved all graphs with {} errors".format(errors))
@@ -242,7 +290,6 @@ class GraphGUI(tk.Tk):
             writer.writerow([e, val["total"], val["pre"], val["instr"],
                              val["exerc"], val["cladap"], val["indadap"],
                              val["post"]])
-
 
     def write_spikes(self, student, loid, bounds, graph):
         row = [str(student), str(loid)]
@@ -278,41 +325,35 @@ class GraphGUI(tk.Tk):
         n_peaks = 0
         peak_per_bound = [None if i == j else 0 for i, j in zip(bounds[1:],
                                                                 bounds[:-1])]
-        trans_peak = [None if i == j else 0 for i, j in zip(bounds[1:],
-                                                            bounds[:-1])]
+        trans_peak = [None if i == j else 0 for i, j in zip(bounds[2:],
+                                                            bounds[1:-1])]
         m_s = .015  # Minimum spikiness
         # Track current bound
         bound = 0  # Tracks current bound
-        while 0 == bounds[bound+1]:
+        while 0 == bounds[bound + 1]:
             bound += 1
 
-        # first answer
+        # Not counting immediate drop as a peak
         old_j = graph[0]
-        if graph[0] > graph[1]+m_s:
-            locs.append(0)
-            n_peaks += 1
-            peak_per_bound[bound] = 1
-            trans_peak[bound] = 1
-
         # middle answers
-        for i in range(1, bounds[-1]-2-1):
+        for i in range(1, bounds[-1] - 2 - 1):
             print(i)
             j = graph[i]
-            n = graph[i+1]
-            if i+2 > bounds[bound+1]:
-                while i+2 > bounds[bound+1]:
+            n = graph[i + 1]
+            if i + 2 > bounds[bound + 1]:
+                while i + 2 > bounds[bound + 1]:
                     bound += 1
                     if bound > 5:
                         print(i)
                     print("Bound is now at {}".format(bound))
-                if (j > old_j+m_s) and (j > n+m_s):
+                if (j > old_j + m_s) and (j > n + m_s):
                     # print("Peak, plus transition at position {}".format(i))
                     locs.append(i)
-                    trans_peak[bound] += 1
+                    trans_peak[bound - 1] += 1
                     n_peaks += 1
                     peak_per_bound[bound] += 1
             else:
-                if (j > old_j+m_s) and (j > n+m_s):
+                if (j > old_j + m_s) and (j > n + m_s):
                     # print("Peak at position {}".format(i))
                     locs.append(i)
                     n_peaks += 1
@@ -320,16 +361,16 @@ class GraphGUI(tk.Tk):
             old_j = j
 
         # last answer
-        if graph[-1]>old_j+m_s:
-            locs.append(len(graph)-1)
-            n_peaks+=1
+        if graph[-1] > old_j + m_s:
+            locs.append(len(graph) - 1)
+            n_peaks += 1
             peak_per_bound[bound] += 1
 
         print("peaks are at {}".format(locs))
         return n_peaks, peak_per_bound, trans_peak
 
     def calc_spikes(self, graph, bounds):
-        gen_sp = max(graph)/(sum(graph)/len(graph))
+        gen_sp = max(graph) / (sum(graph) / len(graph))
         lst_sp = []
         for b1, b2 in zip(bounds[:-1], bounds[1:]):
             part = graph[b1:b2]
@@ -338,7 +379,7 @@ class GraphGUI(tk.Tk):
             elif sum(part) == 0:
                 lst_sp.append(0)
             else:
-                lst_sp.append(max(part)/(sum(part)/len(part)))
+                lst_sp.append(max(part) / (sum(part) / len(part)))
         return gen_sp, lst_sp
 
 
@@ -439,12 +480,12 @@ class GraphPage(tk.Frame):
                    command=controller.save_all_graphs).grid(row=0,
                                                             column=len(
                                                                 self.methods)
-                                                                       + 2)
+                                                                   + 2)
         ttk.Button(method_frame, text="make long file",
                    command=controller.make_long_file).grid(row=0,
                                                            column=len(
-                                                                self.methods)
-                                                                       + 3)
+                                                               self.methods)
+                                                                  + 3)
 
         method_frame.pack()
 

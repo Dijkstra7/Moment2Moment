@@ -750,12 +750,10 @@ class MomentByMoment:
             # Done by finding all post-test exercises backwards.
             # print('finding repeated adaptive exercises')
             not_yet = True  # Whether we are at post-testing
-            bounds = [bounds[i] - 1 if i > 4 else bounds[i] for i in
-                      range(len(bounds))]
-            while not_yet is True and len(excs) > 1:
+            while not_yet is True and len(excs) > 0:
                 bounds = [bounds[i] + 1 if i > 4 else bounds[i] for i in
                           range(len(bounds))]
-                print(bounds)
+                print(e, bounds)
                 if e in ptids:
                     leftover_ptids=ptids[:]
                     removed_ptids = []
@@ -770,7 +768,7 @@ class MomentByMoment:
                     if (len(ptids) == 1 and e == ptids[0]) or len(excs) == 1:
                         not_yet = False
                         print("Should save")
-                        bounds[-1] += len(removed_ptids) + 1
+                        bounds[-1] += len(removed_ptids)
                         if saving:
                             for e in removed_ptids:
                                 if e in self.count_exercises:
