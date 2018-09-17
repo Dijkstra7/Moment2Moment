@@ -15,6 +15,16 @@ import DataHandler
 LARGE_FONT = ("Verdana", 12)
 
 
+def get_fase(last_peak, bounds):
+    if last_peak is None:
+        return None
+    for bound in bounds:
+        if bound is None:
+            continue
+        if last_peak < bound:
+            return bounds.index(bound)
+
+
 class GraphGUI(tk.Tk):
     def __init__(self, *args, **kwargs):
         tk.Tk.__init__(self, *args, **kwargs)
@@ -35,28 +45,34 @@ class GraphGUI(tk.Tk):
             new_frame.grid(row=0, column=0, sticky='nsew')
         self.show_frame(GraphPage)
         self.method = 'all'
-        self.header_row = ["student", "leerdoel", "aantal_opgaven_pre-test",
-                           "aantal_opgaven_guided_practice",
-                           "aantal_opgaven_non-adaptive_practice",
-                           "aantal_opgaven_adaptive_practice",
-                           "aantal_opgaven_repeated_adaptive_practice",
-                           "aantal_opgaven_posttest", "curve_type",
-                           "fase_last_peak", "spikiness_in_general",
-                           "spikiness_pre-test", "spikiness_guided_practice",
-                           "spikiness_non-adaptive_practice",
-                           "spikiness_adaptive_practice",
-                           "spikiness_repeated_adaptive_practice",
-                           "spikiness_post-test", "peaks_in_total",
-                           "peaks_pre-test", "peaks_guided_practice",
-                           "peaks_non-adaptive_practice",
-                           "peaks_adaptive_practice",
-                           "peaks_repeated_adaptive_practice",
-                           "peaks_post-test", "transition_peaks_total",
-                           "transition_peaks_before_guided_practice",
-                           "transition_peaks_before_non-adaptive_practice",
-                           "transition_peaks_before_adaptive_practive",
-                           "transition_peaks_before_repeated_adaptive_practice",
-                           "transition_peaks_before_post-test"]
+        self.long_header_row = ["student", "leerdoel",
+                                "aantal_opgaven_pre-test",
+                                "aantal_opgaven_guided_practice",
+                                "aantal_opgaven_non-adaptive_practice",
+                                "aantal_opgaven_adaptive_practice",
+                                "aantal_opgaven_repeated_adaptive_practice",
+                                "aantal_opgaven_posttest", "curve_type",
+                                "fase_last_peak", "spikiness_in_general",
+                                "spikiness_pre-test",
+                                "spikiness_guided_practice",
+                                "spikiness_non-adaptive_practice",
+                                "spikiness_adaptive_practice",
+                                "spikiness_repeated_adaptive_practice",
+                                "spikiness_post-test", "peaks_in_total",
+                                "peaks_pre-test", "peaks_guided_practice",
+                                "peaks_non-adaptive_practice",
+                                "peaks_adaptive_practice",
+                                "peaks_repeated_adaptive_practice",
+                                "peaks_post-test", "transition_peaks_total",
+                                "transition_peaks_before_guided_practice",
+                                "transition_peaks_before_non-adaptive_practice",
+                                "transition_peaks_before_adaptive_practive",
+                                "transition_peaks_before_repeated_adaptive_practice",
+                                "transition_peaks_before_post-test"]
+        self.short_header_row = [self.long_header_row[0]]
+        for goal in ["lg1", "lg2", "lg3"]:
+            for header in self.long_header_row[1:]:
+                self.short_header_row.append("{}_{}".format(goal, header))
 
     def show_frame(self, cont):
         frame = self.frames[cont]
@@ -123,14 +139,18 @@ class GraphGUI(tk.Tk):
                                                                 self.objective_id)
         self.f.savefig(fname=fname)
 
-    def make_long_file(self):
-        dirname = "long_file_graphs"
+    def make_var_file(self, method="long"):
+        if method != "short":
+            method = "long"
+        dirname = "{}_file_graphs".format(method)
         if not os.path.isdir(dirname):
             os.makedirs(dirname)
-        with open(dirname + "/long_file.csv", 'w', newline='') as csv_file:
+        with open(dirname + "/{}_file.csv".format(method),
+                  'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
             header_row = []
-            for i in self.header_row:
+            for i in [self.long_header_row,  # Get either long or short header
+                      self.short_header_row][["long", "short"].index(method)]:
                 header_row.append(i)
             writer.writerow(header_row)
             for user in self.handler.get_users():
@@ -138,31 +158,29 @@ class GraphGUI(tk.Tk):
                 if str(user) in SKIPSTUDENTS:
                     print("SKIP STUDENT {}".format(user))
                     continue
+                short_row = []
                 for obj in np.unique(self.handler.learn_obj_ids)[1:]:
                     _, _, _, curve, _, _ = self.handler.get_graph_variables(
                         user, method=self.method, oid=obj, saving=False)
                     bounds = self.handler.boundary_list[:]
                     bounds[2] += bounds[0]
-                    self.make_long_file_row(user, obj, bounds, curve, writer)
+                    if method == "long":
+                        writer.writerow(self.make_var_file_row(user, obj,
+                                                               bounds, curve))
+                    else:
+                        short_row = self.make_var_file_row(user, obj, bounds,
+                                                           curve)[1:] + short_row
+                if method == "short":
+                    writer.writerow([user] + short_row)
 
-    def make_long_file_row(self, user, obj, bounds, curve, writer):
-        writer.writerow([user, obj, *[bounds[i] - bounds[i - 1] for
-                                      i in range(1, len(bounds))],
-                         self.classify_curve(curve),
-                         self.get_fase(self.last_peak, bounds),
-                         *self.write_spikes(user, obj,
-                                            bounds, curve)
-                         ])
-
-    def get_fase(self, last_peak, bounds):
-        if last_peak is None:
-            return None
-        for bound in bounds:
-            if bound is None:
-                continue
-            if last_peak < bound:
-                return bounds.index(bound)
-
+    def make_var_file_row(self, user, obj, bounds, curve):
+        return [user, obj, *[bounds[i] - bounds[i - 1] for
+                             i in range(1, len(bounds))],
+                self.classify_curve(curve),
+                get_fase(self.last_peak, bounds),
+                *self.write_spikes(user, obj,
+                                   bounds, curve)
+                ]
 
     def classify_curve(self, curve):
         MINIMUMCHANGE = .015
@@ -201,7 +219,7 @@ class GraphGUI(tk.Tk):
         with open(dirname + 'long_file.csv', 'w', newline='') as csv_file:
             writer = csv.writer(csv_file)
             header_row = []
-            for i in self.header_row:
+            for i in self.long_header_row:
                 header_row.append(str(i))
             writer.writerow(header_row)
             errors = 0
@@ -263,17 +281,18 @@ class GraphGUI(tk.Tk):
                                       (low + .25 * (height - low),
                                        .5 * (height - low)),
                                       facecolors=c)
-                    fname = 'student {} objective {}.png'.format(user,
-                                                                 learn_obj)
+                    vars = self.make_var_file_row(user, learn_obj,
+                                                  boundary_list, o_graph)
+                    fname = 'type {} student {} objective {}' \
+                            '.png'.format(vars[8], user, learn_obj)
                     # fname = 'correctness objective {}.png'.format(learn_obj)
-                    f.suptitle(fname[:-4])
+                    f.suptitle(fname[6:-4])
                     f.savefig(fname=dirname + fname)
                     matplotlib.pyplot.close()
                     # print("coordinates are {}".format(graph_n))
                     print("saved student {} objective {}".format(user,
                                                                  learn_obj))
-                    self.make_long_file_row(user, learn_obj,
-                                            boundary_list, o_graph, writer)
+                    writer.writerow(vars)
 
                 # except Exception as e:
                 #     print("failed saving student {} "
@@ -482,10 +501,13 @@ class GraphPage(tk.Frame):
                                                                 self.methods)
                                                                    + 2)
         ttk.Button(method_frame, text="make long file",
-                   command=controller.make_long_file).grid(row=0,
-                                                           column=len(
-                                                               self.methods)
-                                                                  + 3)
+                   command=controller.make_var_file).grid(row=0,
+                                                          column=len(
+                                                              self.methods)
+                                                                 + 3)
+        ttk.Button(method_frame, text="make short file",
+                   command=lambda: controller.make_var_file("short")).grid(
+            row=0, column=len(self.methods) + 4)
 
         method_frame.pack()
 
